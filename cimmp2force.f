@@ -4,7 +4,7 @@ C * Modify the source code of force2_MP2 from PQS        *
 C * Zhigang 3/23/2017 @UARK                              *
 C ********************************************************
 
-      subroutine force2_MP2_CIM(natom,nmo,nvirt,rhf,ictr,iprnt)
+      subroutine force2_MP2_CIM(natom,nmo,nvirt,rhf,ictr,iprnt,trans)
 C    interface for cim-mp2-gradients
 C    this subroutine is called from cim_mp2 if force is to be calculated.
 C    the MP2 correction to the gradient is calculated and added to the
@@ -30,6 +30,7 @@ C    Zhigang 3/24/2017 @UARK
 c
       parameter (idft=0)
 
+      dimension trans(nmo,nmo)
       integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
       real*8,allocatable::tmp(:),SOVER(:,:)
@@ -189,8 +190,8 @@ c-----------------------------------------------------------------
 C zero-out the two-electron contributions to the force
       call zeroit(bl(lforc2),natom*3)
 
-      call mp2_grad_cim(ncf,    nval,   nvirt,  IPRNT,  thresh,
-     2                  nmo,    natom,bl(lforc2),ncore)
+      call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
+     &                  bl(lforc2),ncore,trans)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -223,7 +224,7 @@ c ...........................................................
 
 C ====================================================================== 
       subroutine mp2_grad_cim(ncf,    nval,   nvir,   iprint, thresh,
-     1                        nmo,    natoms, gradv,  ncore)
+     1                        nmo,    natoms, gradv,  ncore,  trans)
 C
 C  Main routine for CIM-MP2-gradients. 
 C  In CIM we don't release memory after energy calculation. Some of the
@@ -265,7 +266,7 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*)
+      dimension gradv(3,*),trans(nmo,nmo)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
@@ -372,8 +373,8 @@ C  Calculate Matrix A
       call elapsec(eaik2)
 cc
       if(iprint.ge.2) then
-        write(iout,*) ' Construction of Matrix A:'
-        write(iout,100) (taik2-taik1)/sixty,(eaik2-eaik1)/sixty
+         write(iout,*) ' Construction of Matrix A:'
+         write(iout,100) (taik2-taik1)/sixty,(eaik2-eaik1)/sixty
       endif
 C
 C  the following matrices should be saved to the end
@@ -701,7 +702,7 @@ C
       call getival('SymFunPr',ifp)
       call Rphas2_CIM(ncf,nval,ndisk3,nbins,lbin,thresh,bl(ibin),bl(i1),
      1                bl(itmo),bl(itao),nsym,iprint,bl(ictr),nrcpb,
-     2                bl(ifp),gradv,iscs,natoms)
+     2                bl(ifp),gradv,iscs,natoms,trans)
       call symmon
 C
       call retmem(2)
@@ -1270,7 +1271,7 @@ c
 C========Rphas2_CIM===================================================
       subroutine Rphas2_CIM(ncf,nval,ndisk3,nbins,lbin,thresh,ibin,int1,
      &                      Tmnmo,Tmnao,nsym,iprint,inx,nrcpb,ifunpair,
-     &                      gradv,iscs,natom)
+     &                      gradv,iscs,natom,trans)
 
       use memory
 
@@ -1317,7 +1318,7 @@ c     calculation, we need to transform the T from QCMO to LMO.
       integer*1 int1(2,lbin)
       integer*4 ibin(2,lbin)
       character*11 scftype
-      dimension Tmnao(ncf,ncf),Tmnmo(nval,*)
+      dimension Tmnao(ncf,ncf),Tmnmo(nval,*),trans(nval,nval)
       dimension ifunpair(7,*)
       dimension gradv(3,*)
       dimension inx(12,*)
@@ -1472,8 +1473,8 @@ C  backtransform this matrix to AO basis
                   call secund(ttbt1)
 
 C  First, transform one of the occupied indices from QCMO to LMO
-C                  allocate(Tlq(ncen,nval))
-C                  call TQtoL(Tmnmo,Tlq,trans,ncen,nval)
+                  allocate(Tlq(ncen,nval))
+                  call TQtoL(Tmnmo,Tlq,trans,ncen,nval)
 
 C                  call BackTrans_CIM(Tmnao,ncf,nval,ipr,jpr,
 C     2                           bl(ipoint),bl(jpoint),bl(iocca))
@@ -1586,18 +1587,25 @@ C ======================================================================
 
      
 C ======================================================================
-C      subroutine TQtoL(Tmnmo,Tlq,trans,ncen,nval)
-CC this routine transforms one of the indices of Tmnmo index from QCMO to
-CC LMO.
-CC NZG_5/16/2017 @UARK
-C
-C      use memory
-C      implicit none
-C
-C      integer ncen,nval,i,j
-C      real*8 
-C
-C      
+      subroutine TQtoL(Tmnmo,Tlq,trans,ncen,nval)
+C this routine transforms one of the indices of Tmnmo index from QCMO to
+C LMO.
+C NZG_5/16/2017 @UARK
+
+      use memory
+      implicit none
+
+      integer ncen,nval,i,j
+      real*8 Tmnmo(nval,nval),Tlq(ncen,nval),tran(nval,nval)
+
+      
+    
+
+
+
+
+
+      
 C
 C
 C      end subroutine TQtoL
