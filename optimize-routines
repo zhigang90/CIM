@@ -1,0 +1,10 @@
+      subroutine preopt(inp,optcyc,natoms)
+      SUBROUTINE OPTGEOM(NMem,Z,Cnvgd)
+      SUBROUTINE OPTMAIN(NDim,   NAtoms, NIC,    NZ,     MCons,
+      SUBROUTINE OPTIMIZE(NCycle, NAtoms, AtSymb, XC,     XOld,
+      SUBROUTINE OPTBFGS(NCycle, N,      TolG,   TolD,   TolE,
+      SUBROUTINE OPTCART(NCycle, NAtoms, AtSymb, XC,     NFix,
+      SUBROUTINE OPTCON(NCycle, NAtoms, NDum,   NCons,  AtSymb,
+      SUBROUTINE OPTCONINT(NCycle, NDEG,   NS,     NCons,  TSflag,
+      SUBROUTINE OPTINT(NCycle, NDEG,   TSflag, MaxDiis,NDiis,
+      SUBROUTINE OPTPEN(NCycle, NAtoms, NDum,   NCons,  AtSymb,

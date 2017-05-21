@@ -1,0 +1,205 @@
+      SUBROUTINE CosmoHESS2(NAtoms, NTrans, NQ,     XC,     ICHARG,
+     $                      IUNQ,   ISYM,   NEqATN, TRANS,  QCOS,
+     $                      GUP,    GDOWN,  HESS,   IMem,   Z)
+      IMPLICIT REAL*8(A-H,O-Z)
+C
+C
+C  Computes the second derivative (with respect to coordinate displacement)
+C  of various COSMO terms, specifically:
+C      contribution from the A-matrix
+C      the surface 2nd-derivative term
+C      contribution from the nuclear potential
+C  These terms are all estimated via numerical differentiation of the
+C  corresponding gradient term
+C
+C  ARGUMENTS
+C
+C  NAtoms  -  number of (real) atoms
+C  NTrans  -  number of symmetry operations
+C  NQ      -  number of symmetry unique atoms
+C  XC      -  Cartesian coordinates of all atoms
+C  ICHARG  -  integer atomic charges
+C  IUNQ    -  list of symmetry-unique atoms
+C  ISYM    -  list of all atoms
+C              ISYM(I) = 1 if atom I symmetry-unique
+C              ISYM(I) = 0 otherwise
+C  NEqATN  -  list of atomic equivalences under symmetry operations
+C  TRANS   -  symmetry operations as 3x3 transformation matrices
+C  QCOS    -  COSMO surface charges (at original geometry)
+C  GP      -  gradient for step up
+C  GM      -  gradient for step down
+C  HESS    -  Hessian matrix
+C  IMem    -  amount of scratch memory
+C  Z       -  storage for scratch memory
+C
+C
+      DIMENSION XC(3,NAtoms),ICHARG(NAtoms),IUNQ(NQ),TRANS(9,NTrans),
+     $          NEqATM(NAtoms,NTrans),GP(3*NAtoms),GM(3*NAtoms),
+     $          ISYM(NAtoms),HESS(3*NAtoms,3*NAtoms)
+      DIMENSION QCOS(*)
+      DIMENSION Z(IMem)
+      CHARACTER*100 cerm
+      Logical Symflag,Equiv
+c
+      PARAMETER (delta=0.0005d0)
+C
+C
+C  initialize
+C
+      NAt3 = 3*NAtoms
+      delta2 = delta+delta
+      Symflag = NTrans.GT.1
+C
+C  Loop over symmetry-unique atoms only
+C
+      DO 50 I=1,NQ
+      IAtm = IUNQ(I)
+      DO 40 J=1,3
+      ICol = 3*(IAtm-1)+J
+C
+C  step-up
+C
+      XC(J,IAtm) = XC(J,IAtm) + delta
+      CALL CpyVEC(3*NAtoms,XC,XYZ)
+C
+C  construct COSMO surface
+C
+      call consts(XYZ,    NUC,    SRAD,   COSURF, IATSP,
+     $            DIRAM,  DIRSMH, DIRVEC, NAR,    AR,
+     $            DIRTM,  NSETF,  NSET,   NAtoms, maxnps,
+     $            nsps,   nsph,   nppa,   disex,  disex2,
+     $            rsolv,  routf,  nps,    npsph,  area,
+     $            volume, phsran, ampran, lcavity,tm,
+     $            IErr,   cerm,   Z(idin),Z(ixsp),Z(isu),
+     $            Z(inip),Z(ilip),Z(iisu),Z(inn))
+C
+C  now get step-up gradient
+C
+      CALL ZeroIT(GP,NAt3)
+      call cavnucgrd(NAtoms, XC,     nps,    COSURF, IATSP,
+     $               QCOS,   AR,     nip,    Z(isu), Z(iisu),
+     $               lcavity,GP,     ICHARGE)
+C
+C  restore original geometry
+C
+      XC(J,IAtm) = XC(J,IAtm) - delta
+C
+C  check if we need to take step down
+C
+      If(Symflag.AND.XC(J,IAtm).EQ.Zero) Then
+        CALL EquivGRD(NAtoms,NTrans,J,XC(1,IAtm),NEqATM,TRANS,
+     $                .False.,GP,GM,Dip,Equiv)
+        If(Equiv) GO TO 45
+       EndIf
+C
+C  step-down
+C
+      XC(J,IAtm) = XC(J,IAtm) - delta
+      CALL CpyVEC(3*NAtoms,XC,XYZ)
+C
+C  construct COSMO surface
+C
+      call consts(XYZ,    NUC,    SRAD,   COSURF, IATSP,
+     $            DIRAM,  DIRSMH, DIRVEC, NAR,    AR,
+     $            DIRTM,  NSETF,  NSET,   NAtoms, maxnps,
+     $            nsps,   nsph,   nppa,   disex,  disex2,
+     $            rsolv,  routf,  nps,    npsph,  area,
+     $            volume, phsran, ampran, lcavity,tm,
+     $            IErr,   cerm,   Z(idin),Z(ixsp),Z(isu),
+     $            Z(inip),Z(ilip),Z(iisu),Z(inn))
+C
+C  now get step-down gradient
+C
+      CALL ZeroIT(GM,NAt3)
+      call cavnucgrd(NAtoms, XC,     nps,    COSURF, IATSP,
+     $               QCOS,   AR,     nip,    Z(isu), Z(iisu),
+     $               lcavity,GM,     ICHARGE) 
+C
+C  restore original geometry
+C
+      XC(J,IAtm) = XC(J,IAtm)
+C
+C  Construct this row/column of Hessian
+C
+      DO 30 K=1,NAt3
+      HESS(ICol,K) = ( GP(K)-GM(K) )/delta2
+ 30   CONTINUE
+c
+ 45   CONTINUE
+ 50   CONTINUE
+c
+       If(IPRNT.GT.4) Then                      ! debug printout
+        write(6,*) ' Hessian is:'
+        call prntmat(nat3,nat3,nat3,Hess)
+       EndIf
+C
+C  Construct full Hessian from Symmetry-unique rows
+C
+      IF(NTrans.GT.1.AND.NAtoms.GT.2) THEN
+C
+C  Copy Rows into Columns
+C
+       DO 50 IQ=1,NQ
+       JATOM = IUNQ(IQ)
+       JJ = 3*(JATOM-1)
+       DO 49 IAtm=1,NAtoms
+       II = 3*(IAtm-1)
+       IF(ISYM(IAtm).EQ.0) THEN
+        DO 42 I=1,3
+        IT = II+I
+        DO 41 J=1,3
+        JT = JJ+J
+        HESS(IT,JT) = HESS(JT,IT)
+ 41     CONTINUE
+ 42     CONTINUE
+       ENDIF
+c
+ 49    CONTINUE
+ 50    CONTINUE
+C
+C  Now generate all Hessian blocks from
+C  symmetry-unique blocks
+C
+       i1 = 1
+       i2 = i1 + 9*NAtoms**2
+       CALL FulHES(NAtoms, NTrans, ISYM,   NEqATM, TRANS,
+     $             Z(i1),  Z(i2),  HESS)
+c
+       If(IPRNT.GT.4) Then                      ! debug printout
+        write(6,*) ' Full Hessian generated by symmetry is:'
+        call prntmat(nat3,nat3,nat3,Hess)
+       EndIf
+C
+C  now symmetrize
+C
+       CALL CpyVEC(NAT3*NAT3,HESS,HOLD)
+       CALL SymHES(NAtoms, NTrans, NEqATM, TRANS,  HOLD,
+     $             Z(i1),  Z(i2),  thrsh,  HESS)
+cc
+      ELSE
+cc
+C  No symmetry
+C  Simply ensure overall matrix is symmetric
+C
+       FAC = Half
+       If(NAtoms.EQ.2) FAC = One
+       DO 60 I=2,NAT3
+       DO 60 J=1,I-1
+       HESS(I,J) = FAC*(HESS(I,J)+HESS(J,I))
+       HESS(J,I) = HESS(I,J)
+ 60    CONTINUE
+       If(NATOMS.EQ.2) Then
+        HESS(6,6) = HESS(3,3)
+       EndIf
+cc
+      ENDIF
+c
+      IF(IPRNT.GT.2) THEN
+       WRITE(6,1600)
+       CALL PrntMAT(NAt3,NAt3,NAt3,HESS)
+      ENDIF
+c
+ 1600 FORMAT(' Final Hessian Matrix is:')
+c
+      RETURN
+      END

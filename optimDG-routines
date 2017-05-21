@@ -1,0 +1,28 @@
+      SUBROUTINE DefHES(NDEG,   intcor, NCon,   ktyp,   klist,
+      SUBROUTINE DefHESZ(NZ,NVar,IG,HESS)
+      SUBROUTINE DefHPRIM(NPrim,  NCon,   ktyp,   klist,  XC,
+      SUBROUTINE DTOPOLOGY(NAtoms, NMol,   IMOL,   XC,     NIC,
+      SUBROUTINE EstNPrim(NAtoms, XC,     CutOff, NPrim)
+      SUBROUTINE ExpandV(NS,NCons,NCon,ICHK,V,VX)
+      SUBROUTINE FillZ(NZ,XPrim,INDX,GEO)
+      SUBROUTINE FixCON(NAtoms, XC,     NFix,   IFIX,   NPrim,
+      SUBROUTINE FndNEG(N,EigVal,NEG)
+      SUBROUTINE FormD(NCycle, NC,     N,      NegReq, mode,
+      SUBROUTINE FormNR(NC,N,U,EigVal,FX,D)
+      SUBROUTINE GDIIS(NDEG,   N,      MaxDiis,NDiis,  IPRNT,
+      SUBROUTINE GDrive(NDrive, NPrim,  NS,     IPrnt,  LDRIVE,
+      SUBROUTINE GetCART(NAtoms, AtSymb, NDEG,   NPrim,  IGen,
+      SUBROUTINE GetCARTR(NAtoms, AtSymb, NDEG,   intcor, XINT,
+      SUBROUTINE GetCARTZ(NAtoms, AtSymb, NDEG,   intcor, IGen,
+      SUBROUTINE GetD(NDim,IPRNT,XC,D)
+      SUBROUTINE GetHPRIM(NAt3,   NPrim,  HESS,   GINV,   IPRNT,
+      SUBROUTINE GetINTL(NCycle, NAtoms, AtSymb, XC,     NMol,
+      SUBROUTINE GenINVT(NAtoms, XC,     NPrim,  ktyp,   klist,
+      SUBROUTINE GetNPrim(NAtoms,Tors,IC,NPrim)
+      SUBROUTINE GetSymPrim(NAtoms, NPrim,  NTrans, NEqATM, ktyp,
+      SUBROUTINE GetWGHT(intcor, NDEG,   NCon,   IPRNT,  UT,
+      SUBROUTINE GetZINT(NZ,     NAtoms, NIC,    NVar,   IPRNT,
+      SUBROUTINE GetZVAR(NZ,NIC,GEO,ZINT)
+      SUBROUTINE GrdINT(NAtoms,NDEG,GC,BINV,GINT)
+      SUBROUTINE GrdINT2(NAtoms, N,      B,      gcart,  IPRNT,
+      SUBROUTINE GrdZMAT(NZ,     NIC,    ZSymb,   GC,     BINV,

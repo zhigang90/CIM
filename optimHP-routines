@@ -1,0 +1,25 @@
+      SUBROUTINE HSSCART(NAtoms, intcor, NDEG,   IDB,    IPRNT,
+      SUBROUTINE HSSINT(NAtoms, intcor, NDEG,   IDB,    IPRNT,
+      SUBROUTINE HssINTZ(NZ,     NAtoms, NIC,    NVar,   IPRNT,
+      SUBROUTINE IntCnvCON(NS,     NCons,  NCon,   ICHK,   XINT,
+      SUBROUTINE IntConGRAD(NS,     NCons,  NCon,   ICHK,   RCHK,
+      SUBROUTINE IntLgngeHESS(NS,NCons,NCon,ICHK,HESS,HESSC)
+      SUBROUTINE LgngeHESS(NCTR3,NCons,HESS,GCC,HESSC)
+      SUBROUTINE LincGRAD(NAtoms,I,J,K,L,XC,linc,grd,G)
+      SUBROUTINE LinpGRAD(NAtoms,I,J,K,L,XC,linp,grd,G)
+      SUBROUTINE LinTOPO(NAtoms, IC,     IVdW,   intcor, ktyp,
+      SUBROUTINE MakeDIC(NAtoms, intcor, NVib,   IPRNT,  ktyp,
+      SUBROUTINE MakeINTC(NAtoms, AtSymb, XC,     NMol,   IMOL,
+      SUBROUTINE MapCON(NCon,   ICTYP,  ICON,   RCON,   NPComp,
+      SUBROUTINE MapDRIVE(NDrive, IDRTYP, IDRV,   LDRIVE, IPrnt,
+      SUBROUTINE ModeOverlap(NCycle, N,      mode,   Nmode,  IPRNT,
+      SUBROUTINE MODPrim(NPrim,  NPrim1, MPrim,  IHPrim, INDX,
+      SUBROUTINE NewCART(NAtoms,NIC,BINV,XINT,QQ,XC)
+      SUBROUTINE OPTEF(NCycle, NC,     N,      NCon,   NEG,
+      SUBROUTINE PenGRAD(NAtoms, NCons,  ICTYP,  RCON,   IC,
+      SUBROUTINE PrntCON(IOut,   NAtoms, NCons,  XC,     ICTYP,
+      SUBROUTINE PrntDRIVE(IOut,NDrive,IDRTYP,IDRIVE,FDRIVE)
+      SUBROUTINE PrntFIX(IOut,NAtoms,IFix,CFix,ISTR)
+      SUBROUTINE ProjTR(NAtoms, XC,     IProj,  IPRNT, P,
+      SUBROUTINE FormTR(NAtoms,XC,T,V)
+      SUBROUTINE PutDUM(NCycle, NAtoms, NDum,   NCons,  XC,

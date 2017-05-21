@@ -1,0 +1,1780 @@
+* - USAGE -:
+* Run 'cimf [option] file.gjf'
+* Option parameter:
+* -h -help: Show information for help
+*
+* --- Collecting the Results of Cluster-in-Molecule (CIM) Calculations ---
+*     Since 2008.03.18 by WL,PP
+*     Updated on 2010.04.14 by WL,PP
+* -----------------------------------------------------
+*
+* --- LIST OF FILE UNITS [formatted] ---
+*     inp [inname]:   GAUSSIAN input file exam.gjf (needed as input file)
+*     io [outname]:   LSCIM general output file exam.out
+*     igjc [gjcname]: GAMESS input file exam.inp (created by this program)
+*     igms [gmsname]: GAMESS general output file exam.gms
+*
+* --- LIST OF FILE UNITS [unformatted] ---
+*     ifo [nfoname]:  GAMESS output file for informations and one-elec integrals exam.ifo
+*     t2i [t2iname]:  GAMESS output file for two-elec AO integrals exam.t2i
+*     itmp [tmpname]: LSCIM Temporirary file for integrals transformation exam.tmp
+*     m2e [m2ename]:  LSCIM output file for two-elec MO integrals exam.m2e
+*     moe [moename]:  LSCIM outfile for MOs coefficients exam.moe (not available now)
+*
+* --- LIST OF VARIABLES FOR TOTAL MOLECULE  [integer] ---
+*     NATOM:  Number of atoms
+*     NW:     Number of basis functions
+*     Nmo:    Number of all MOs (e.g. Number of independant functions, Nmo.le.NW)
+*     NUW:    Number of occupied MOs
+*     icha:   Number of charges
+*     mult:   Multiplicity
+*     nel:    Number of electrons
+*     k_alph: Number of alpha electrons
+*     k_beta: Number of beta electrons
+*     nsh:    Number of contracted shells',nsh,k)
+*     npr:    Number of primitive shells',npr,k)
+*     tbs(NW):       Atomic label for basis
+*
+* --- LIST OF VARIABLES FOR TOTAL MOLECULE  [real(kind=8)] ---
+*     NN:     Nuclear Repulsion Energy',NN,k)
+*     ETOT:   Total MP2 correlation energy
+*     nuchar(NATOM): Nuclear charges
+*     coor(3,NATOM): Cartesian coordinates
+*     EIGEN(Nmo):    Alpha MOs eigenvalues
+*     SMO(Nmo,Nmo):  Alpha MOs coefficients
+*     SOVER(NW,NW):  AO overlap matrix
+*     HCORE(NW,NW):  AO core-Hamiltonian matrix
+*     FK(Nmo,Nmo):   AO Fock matrix
+*     FIJ(Nmo,Nmo):  MO Fock matrix
+*     admx(NW,NW):   AO dipole moment integrals in X-direct
+*     admy(NW,NW):   AO dipole moment integrals in Y-direct
+*     admz(NW,NW):   AO dipole moment integrals in Z-direct
+*     mdmx(Nmo,Nmo): MO dipole moment integrals in X-direct
+*     mdmy(Nmo,Nmo): MO dipole moment integrals in Y-direct
+*     mdmz(Nmo,Nmo): MO dipole moment integrals in Z-direct
+*
+* --- LIST OF LSCIM PARAMETERS FOR CALCULATION [integer] ---
+*     nfocc:  Number of frozen occupied MOs (default: nfocc=0)
+*     nfvir:  Number of frozen virtual MOs (default: nfvir=0, nfvir must be 0 for CIM)
+*     np:     Number of threads of OpenMP parellel (not available now)
+*     kmem:   Maximum memory for integrals transformation (unit: Words, e.g. 8 Bytes)
+*     nprint: Level of printing in localization
+*             nprint=0 ~ Print information at each ten of cycles without final LMOs
+*             nprint=1 ~ Print final LMOs other than nprint=0
+*     maxcyc: Maximum cycles of localization (default: maxcyc=10000)
+*     conv:   Convergence threshold of iterative MP2 (default: conv=7)   ! 2007.10.17.conv=6 --> =7
+*     eps:    Threshold of the convergance in localization (default: eps=1d-7)
+*     epst:   Threshold of the selected rotation in localization (default: eps=1d-13)
+*     level: Type of MP2 calculations (default: level=1)
+*             level=1: Canonical MP2 calculation
+*             level=2: Local MP2 calculation (Boys localization)
+*             level=3: CIM-MP2 calculation (Boys localization)
+*     
+      subroutine cimf(finalenergy,finalonly)
+      implicit none
+C
+      logical finalonly
+      real*8 finalenergy
+      COMMON /IOFILE/ IR2,io,IP2,IS2,IPK2,IDAF2,NAV2,IODA2(950)
+      COMMON /CIMINF/ ICIM2,itx,MOTYP2,NCA2,NCB2,NFRG  !-CIM-
+      integer icim2,ir2,ip2,is2,ipk2,idaf2,nav2,ioda2,nca2,ncb2
+      integer ieof
+      character*8 motyp2
+C
+      integer inp,io,igjc,igms,itmp,ifo,t2i,m2e,moe,isys,job,icim,itx
+      integer iemo
+C     parameter (inp=12,io=11,igjc=13,igms=17)
+      parameter (igjc=13,igms=17)
+      parameter (itmp=18,ifo=19,t2i=21,m2e=22,moe=23,isys=24,job=25)
+C     parameter (icim=26,itx=28,iemo=29)
+      parameter (icim=26,iemo=29)
+C
+      integer i,j,k,l,m,n,i1,i2,i3,i4,j1,j2,j3,j4,k1,k2,k3,k4,ii,jj,kk
+      integer NW,NUW,NATOM,nsh,npr,nprint,maxcyc,kerr,nprtcyc,kerr2
+      integer Nmo,k_alph,k_beta,ierr,nfocc,nfvir,np,jerr,iold,NOeff,NU
+      integer mplevl,istop,mo_typ,ISymm,maxf,NO,ncor,noa,nob,nca,ncb
+      character*8 scftyp,cctyp,motyp
+      integer nlmo,NFRG
+      logical dirscf
+C
+      real(kind=8) NN,eps,epst,ZT(10)
+C
+      character addi*100,mem*20,mthd*20,basis*30,nproc*4,runtyp*20
+      character command*256,line*256,line2*256,lsqcln*1024,gver*3
+      character key18*18,sls,key30*30,suffix*10,key15*15
+      character(len=100) inname,outname,gjcname,gmsname,tmpname
+      character(len=100) nfoname,moename,t2iname,m2ename,logname
+      character(len=100) sysname,jobname,snfname,pfxname,ecimname
+      character(len=100) tempname,cimname,datname,emoname
+      character(len=100) punname,subname,inpname
+      integer system
+      integer (kind=4) Wall0,Wall,TIME
+      real(kind=8) trace,dtrace2   !,coor(3,NATOM),nuchar(NATOM)
+      real*8 Tim0,CPUTim
+      external dtrace2,CPUTim !,system,TIME   ! Add TIME in external 2006.02.06
+      logical exst
+      integer,allocatable::KCA(:),KCB(:),KOA(:),KOB(:)
+      integer,allocatable::MOOCC(:),KSymm(:)
+      real(kind=8),allocatable::EMO(:),EMO0(:)
+      integer,allocatable::NNA(:,:),NNB(:,:)
+      character(len=10),allocatable::ctypes(:)
+      character(len=14),allocatable::CENRG(:)
+
+      real(kind=8),allocatable::EEA(:,:),EEB(:,:),ETOT(:)
+      integer,allocatable::MOCEN(:),mocorr(:)
+      integer nsy,maxl,minl,iskip,ngroup,ngroup2,ngmo,nsy0
+
+      integer kmin,kmax,kavg,khgh,ktype
+      integer khf,kmp2,kscs,kmp3,kmp4
+      integer kccd,ksd,ksdt1,ksdt2,ksd2t,kccl,ksdt
+C
+      character(len=8),dimension(:),allocatable::cctyps,caltyp
+      integer,dimension(:),allocatable::NATs,NUMs,NOs,NUs,mplevls
+      integer,dimension(:),allocatable::MOLevl,SYSLevl,CENLevl
+      real(kind=8) TIMS(10),RAMS(10),MAXTIM(10),MAXRAM(10),TOLTIM(10)
+
+      integer NMOsub
+      real(kind=8) TTmp2,TTccd,TTeom,TTtri,TTcpu,TTwal,TTcorr
+      real(kind=8) MTmp2,MTccd,MTeom,MTtri,MTcpu,MTwal
+      real(kind=8) MMmin,MMmax,MMmp2,MMsrt,MMmst,MMccd,MMtri,MDisk
+      integer MNATs,MNUMs,MNOs,MNUs,maxtyp
+      integer INATs,INUMs,INOs,INUs,ITmp2,ITccd,ITeom,ITtri,ITcpu,ITwal
+      integer IMmin,IMmax,IMmp2,IMsrt,IMmst,IMccd,IMtri,IDisk
+      real(kind=8) EHF,E2B
+C
+      integer marg
+      parameter (marg=20)
+      integer narg,typarg(0:marg)
+      character*100 arg(0:marg)
+C
+      integer IWORK(100),L1,L2
+      real(kind=8) RWORK(100)
+      character(len=8) CWORK(100),METHDS(0:5),METHOD
+      logical LWORK(100)
+C
+      real(kind=8),dimension(:),allocatable::ESUBSYS,ECENTRAL,ETWOBODY
+      real(kind=8) ETOT0,ETOT2,E2IN,E2OUT,ETOT2A,ETOT2B
+      real(kind=8) ETOT2A1,ETOT2B1
+      real(kind=8) ETOT2A2,ETOT2B2,DISMIN,DISMAX,EEEE1,EEEE2,EEEE3,EEEE
+      integer IXX1,IXX2,IXX3,IXX4
+      integer ntwo,ntwo1,ntwo2
+      integer,allocatable::KTWO(:),KTS(:)
+      real(kind=8),allocatable::E2BDY(:),CTWO(:),DTWO(:),E2D(:)
+      real(kind=8),allocatable::ECC(:,:),ECE(:,:),EEE(:,:),FF(:,:)
+      integer,allocatable::NCC(:,:),NCE(:,:),NEE(:,:)
+C
+C --- Tim0: Initial CPU time; Wall0: Initial WALL time
+      Tim0=CPUTim(0)
+C     Wall0=TIME()
+      sls=char(47)   ! sls='/'
+C
+      METHDS(0) = 'NONE    '
+      METHDS(1) = 'MP2     '
+      METHDS(2) = 'CCD     '
+      METHDS(3) = 'CCSD    '
+      METHDS(4) = 'CCSD(T) '
+      METHDS(5) = 'CR-CCL  '
+C
+C --- Read some information from .out file ---
+      call seqopn(itx,'CIMFILE','OLD',.false.,'FORMATTED')
+C
+      do i=1,100
+         IWORK(i) = 0
+         RWORK(i) = 0.0D0
+         CWORK(i) = '        '
+         LWORK(i) = .false.
+      enddo
+      call CIMREAD(io,itx,'CIMINP  ',IWORK,RWORK,CWORK,LWORK)
+      call CIMREAD(io,itx,'INFO    ',IWORK,RWORK,CWORK,LWORK)
+      call CIMREAD(io,itx,'INFO    ',IWORK,RWORK,CWORK,LWORK)
+      call CIMREAD(io,itx,'ENERGY  ',IWORK,RWORK,CWORK,LWORK)
+      EHF = RWORK(52)
+C
+      khf   =  1 ! NONE/HF
+      kscs  =  2 ! SCS-MP2
+      kmp2  =  3 ! MP2
+      kmp3  =  4 ! MP3
+      kmp4  =  5 ! MP4
+      kccd  =  6 ! CCD
+      ksd   =  7 ! CCSD
+      ksdt1 =  8 ! CCSD[T]
+      ksdt2 =  9 ! CCSD(T)
+      ksd2t = 10 ! CCSD(2)_T
+      kccl  = 11 ! CR-CC(2,3)
+      ksdt  = 12 ! CCSDT
+      if (CWORK(4).EQ.'AVERAGE ') then  ! CWORK(4)=ENRGML
+         khgh = 13   ! HIGHER
+         kavg = 14   ! AVERAGE
+      else
+         kavg = 13
+         khgh = 14
+      endif
+      kmin  =  1             ! MIN
+      kmax  = max(kavg,khgh) ! MAX
+C
+      key15='$TWO-BODY-SUBS '
+      call NJ_seekchar(itx,key15,1,kerr)
+      if (kerr.eq.0) then
+         write(*,*) 'Can not find $TWO-BODY-SUBS in CIMFILE'
+         call abrt
+      else
+         read(itx,'(29x,i8)') ntwo
+      endif
+C
+      key30='=== SOME INFOMATION FOR DOMAIN'
+      call NJ_seekchar(itx,key30,1,kerr)
+      if (kerr.eq.0) then
+         write(*,*) 'Can not find needed information in CIMFILE'
+         call abrt
+      endif
+      read(itx,'(a)')
+cc    read(io,'(9x,a8)') scftyp
+cc    read(io,'(9x,i8)') mplevl
+cc    read(io,'(9x,a8)') cctyp
+      read(itx,'(9x,2i8)') nsy,nsy0
+      read(itx,*) NATOM,NW,Nmo,ncor,NO,ISymm
+      NOeff=NO-ncor
+      NU=Nmo-NO
+      allocate(KCA(nsy),KCB(nsy),KOA(nsy),KOB(nsy))
+      allocate(KSymm(NO))
+
+      allocate(mplevls(nsy),cctyps(nsy),caltyp(nsy))
+      allocate(NATs(nsy),NUMs(nsy),NOs(nsy),NUs(nsy))
+
+      read(itx,'(a)')
+      read(itx,'(15i6)') (KSymm(i),i=1,NO)
+      read(itx,'(9x,2i8)') ngroup,ngroup2
+      read(itx,'(a)')
+C
+      write(io,*) 'ngroup=',ngroup,ngroup2
+      ntwo2 = nsy-nsy0
+      ntwo1 = ntwo - ntwo2
+C
+      allocate(EEA(NO,kmax),EEB(NO,kmax),CENRG(NO))
+      allocate(NNA(NO,kmax),NNB(NO,kmax))
+      allocate(ETOT(kmax),mocorr(kmax),ctypes(kmax))
+C
+C --- Read some information from .dat file ---
+      allocate(MOLevl(NO),SYSLevl(nsy))
+      allocate(KTWO(2*ntwo),KTS(ntwo),CTWO(ntwo),E2BDY(ntwo))
+      allocate(DTWO(ntwo))
+      allocate(ECC(ngroup2,ngroup2))
+      allocate(ECE(ngroup2,ngroup2))
+      allocate(EEE(ngroup2,ngroup2))
+      allocate(NCC(ngroup2,ngroup2))
+      allocate(NCE(ngroup2,ngroup2))
+      allocate(NEE(ngroup2,ngroup2))
+      allocate(FF(ngroup,ngroup))
+      E2BDY = 0.0D+00
+      ECC = 0.0D+00
+      ECE = 0.0D+00
+      EEE = 0.0D+00
+      FF  = 0.0D+00
+      NCC = 0
+      NCE = 0
+      NEE = 0
+      rewind(itx)
+      call iread(itx, '$MO-LEVEL',  NO,  MOLevl(1))
+      call iread(itx, '$SYS-LEVEL', nsy, SYSLevl(1))
+c     call iread(itx, '$CEN-LEVEL', NO,  CENLevl(1))
+      call iread(itx, '$TWO-BODY-TERM', 2*ntwo, KTWO)
+      call iread(itx, '$TWO-BODY-SUBS',   ntwo, KTS)
+      call rread(itx, '$TWO-BODY-COEF',   ntwo, CTWO)
+      call rread(itx, '$TWO-BODY-DIST',   ntwo, DTWO)
+      call rread(itx, '$GROUP-DIST',      ngroup*ngroup, FF)
+      call iwrit(io,  '$TWO-BODY-TERM', 2*ntwo, KTWO)
+      call iwrit(io,  '$TWO-BODY-SUBS',   ntwo, KTS)
+      call rwrit(io,  '$TWO-BODY-COEF',   ntwo, CTWO)
+      call rwrit(io,  '$TWO-BODY-DIST',   ntwo, DTWO)
+C
+C ------------------- Jun 29, 2010 ---
+      if (maxtyp.ne.0) then 
+         do i=1,NO
+            if (MOLevl(i).gt.maxtyp) MOLevl(i)=maxtyp
+         end do
+         do i=1,nsy
+            if (SYSLevl(i).gt.maxtyp) SYSLevl(i)=maxtyp
+         end do
+      endif
+C -------------------
+C
+c     call iwrit(io,  '$MO-LEVEL',  NO,  MOLevl(1))
+c     call iwrit(io,  '$SYS-LEVEL', nsy, SYSLevl(1))
+C
+      maxl=0
+      do i=1,nsy
+         if (SYSLevl(i).gt.maxl) maxl=SYSLevl(i)
+      enddo
+      minl=9999
+      do i=1,nsy
+         if (SYSLevl(i).eq.0) cycle
+         if (SYSLevl(i).lt.minl) minl=SYSLevl(i)
+      enddo
+C
+c     write(io,'('' Max and min levels (except HF):'',2i8)') maxl,minl
+c     write(io,*) 
+      iskip=2
+C
+      CALL VCLR(MAXTIM,1,10)
+      CALL VCLR(MAXRAM,1,10)
+      CALL VCLR(TOLTIM,1,10)
+      write(io,'(10x,45(1h-))')
+      write(io,'(10x,"SUMMARY OF SUBSYSTEM CORRELATION CALCULATIONS")')
+      write(io,'(10x,45(1h-))')
+      write(io,9000)
+      write(io,9010)
+      write(io,9001)
+      write(io,9015)
+      write(io,9002)
+      do i=1,nsy
+         L=SYSLevl(i)
+         if (L.eq.0) cycle
+         CALL GMS_GETENV('CIMINP',pfxname)
+         call NJ_trim(pfxname,k1,k2)
+         write(line,*) i
+         call NJ_trim(line,k3,k4)
+         cimname=pfxname(k1:k2-3)//'Sys-'//line(k3:k4)//'.cim'       !-WL- 2009.05.07
+         inquire(file=cimname,exist=exst)
+         if (.not. exst) then
+            write(io,*) 'WARNING: '//trim(cimname)//' not found'
+            write(io,*) 'No corr. energy for the LMOs in the subsystem'
+            write(io,*)
+            cycle
+         endif
+C
+         open(icim,file=cimname,form='formatted')       !-WL- 2009.05.07
+         call SUBREAD(icim,TIMS,RAMS)
+C
+         do j=1,10
+            if (TIMS(j).gt.MAXTIM(j)) MAXTIM(j)=TIMS(j)
+            if (RAMS(j).gt.MAXRAM(j)) MAXRAM(j)=RAMS(j)
+            TOLTIM(j)=TOLTIM(j)+TIMS(j)
+         enddo
+C
+         if (L.eq.1) then
+         write(io,9021) i,METHDS(L)(1:7),(TIMS(k),k=5,6),(RAMS(k),k=2,3)
+         else if (L.eq.2.or.L.eq.3) then
+         write(io,9023) i,METHDS(L)(1:7),TIMS(3),(TIMS(k),k=5,6),RAMS(4)
+         else if (L.eq.4.or.L.eq.5) then
+         write(io,9025) i,METHDS(L)(1:7),(TIMS(k),k=3,6),(RAMS(k),k=4,5)
+         else
+         write(io,9020) i,METHDS(L)(1:7),(TIMS(k),k=3,6),(RAMS(k),k=2,5)
+         endif
+      end do
+      write(io,9002)
+      write(io,9030) 'MAX',(MAXTIM(k),k=3,6),(MAXRAM(k),k=2,5)
+      write(io,9040) 'TOTAL',(TOLTIM(k),k=3,6)
+      write(io,9000)
+      write(io,*)
+C
+ 9000 format(1x,71('='))
+ 9001 format(15x,29('-'),2x,26('-'))
+ 9002 format(1x,71('-'))
+ 9010 format(21x,'CPU Time (minutes)',9x,'Required RAM (GB)')
+ 9015 format(1x,'Sys Method     Iter    Trip    Corr    Totl',
+     &       '   MP2MN   MP2   Iter   Trip')
+C
+ 9020 format(i4,1x,A7,4F8.1,4F7.2)
+ 9021 format(i4,1x,A7,2(6x,'--'),2F8.1,2F7.2,2(5x,'--'))
+ 9023 format(i4,1x,A7,F8.1,6x,'--',2F8.1,2(5x,'--'),F7.2,5x,'--')
+ 9025 format(i4,1x,A7,4F8.1,2(5x,'--'),2F7.2)
+C
+ 9030 format(3x,A3,6X,4F8.1,4F7.2)
+ 9040 format(3x,A5,4X,4F8.1,4(5x,'--'))
+
+ 990  continue
+      if (maxl.ne.minl) then
+         write(io,'(1x,54(1h+))')
+         write(io,*) 'CENTRAL LMO ENERGIES FROM ',
+     *   'THE HIGHEST LEVEL SUBSYSTEMS'
+         write(io,'(1x,54(1h+))')
+      else
+         write(io,'(1x,40(1h+))')
+         write(io,*) 'CENTRAL LMO ENERGIES FROM ALL SUBSYSTEMS'
+         write(io,'(1x,40(1h+))')
+      endif
+C
+      NNA = 0
+      NNB = 0
+      EEA = 0.0D+00
+      EEB = 0.0D+00
+      ETOT= 0.0D+00
+C
+C --- Check the .log file ---
+      kerr =0
+      kerr2=0
+      allocate(ESUBSYS(nsy),ECENTRAL(nsy),ETWOBODY(nsy))
+      ESUBSYS  = 0.0D+00
+      ECENTRAL = 0.0D+00
+      ETWOBODY = 0.0D+00
+C
+      nlmo=0
+C --- Collecting the results from .cim files ---
+      do 200 i=1,nsy
+         j=SYSLevl(i)
+         if (j.lt.1) cycle
+         if (j.lt.maxl) cycle  !-WL,PP- 6 JUN 10: FOR SKIPPING SOME SYS
+C
+         CALL GMS_GETENV('CIMINP',pfxname)
+         call NJ_trim(pfxname,k1,k2)
+         write(line,*) i
+         call NJ_trim(line,k3,k4)
+         cimname=pfxname(k1:k2-3)//'Sys-'//line(k3:k4)//'.inp'       !-WL- 2009.05.07
+         inquire(file=cimname,exist=exst)
+         if (.not. exst) then
+            write(io,*) 'WARNING: '//trim(cimname)//' not found'
+            write(io,*) 'No corr. energy for the LMOs in the subsystem'
+            write(io,*)
+            cycle
+         endif
+C
+         open(icim,file=cimname,form='formatted')       !-WL- 2009.05.07
+C
+         call seqrew(icim)
+         CALL FNDGRP(icim,' $INFO   ',IEOF)
+C        READ(icim,'(a)')             ! $INFO
+         READ(icim,'(a)')             ! NSYS
+         READ(icim,'(9x,a8)') scftyp  ! SCFTYP
+         READ(icim,'(9x,i8)') mplevl  ! MPLEVL
+         READ(icim,'(9x,a8)') cctyp   ! CCTYP
+         READ(icim,'(a)')             ! ICONV
+         READ(icim,'(9x,a8)') motyp   ! MOTYP
+         READ(icim,'(a)')             ! SYS
+         READ(icim,'(9x,i8)') NATs(i) ! NAT
+         READ(icim,'(a)')             ! ICH
+         READ(icim,'(a)')             ! MUL
+         READ(icim,'(a)')             ! NE
+         READ(icim,'(9x,i8)') KOA(i)  ! NA
+         READ(icim,'(9x,i8)') KOB(i)  ! NB
+         READ(icim,'(9x,i8)') NUMs(i) ! NUM
+         READ(icim,'(9x,i8)') NMOsub  ! NMO
+         READ(icim,'(9x,i8)') KCA(i)  ! NCA
+         READ(icim,'(9x,i8)') KCB(i)  ! NCB
+         READ(icim,'(9x,i8)') NFRG    ! NFRG
+C
+         if (motyp.eq.'LMO     ') nlmo = nlmo + 1
+C
+         if (maxtyp.ne.0) then
+            if (SYSLevl(i).eq.0) then
+               mplevl = 0
+               cctyp  = 'NONE    '
+            else if (SYSLevl(i).eq.1) then
+               mplevl = 2
+               cctyp  = 'NONE    '
+            else if (SYSLevl(i).eq.2) then
+               mplevl = 0
+               cctyp  = 'CCD     '
+            else if (SYSLevl(i).eq.3) then
+               mplevl = 0
+               cctyp  = 'CCSD    '
+            else if (SYSLevl(i).eq.4) then
+               mplevl = 0
+               cctyp  = 'CCSD(T) '
+            else if (SYSLevl(i).eq.5) then
+               mplevl = 0
+               cctyp  = 'CR-CCL  '
+            endif
+         endif
+C
+         mplevls(i) = mplevl
+         cctyps(i)  = cctyp
+         NOs(i)  = KOA(i)
+         NUs(i)  = NMOsub-NOs(i)
+C
+         if (cctyp.eq.'NONE    ') then
+            if (mplevl.eq.2) then
+               ktype=kmp2
+               caltyp(i)='MP2     '
+            else if (mplevl.eq.3) then
+               ktype=kmp3
+               caltyp(i)='MP3     '
+            else if (mplevl.eq.4) then
+               ktype=kmp4
+               caltyp(i)='MP4     '
+            else
+               ktype=khf
+               caltyp(i)='NONE    '
+            end if
+         else
+            caltyp(i)=cctyp
+            if (cctyp.eq.'CCD     ') then
+               ktype=kccd
+            else if (cctyp.eq.'CCSD    ') then
+               ktype=ksd
+            else if (cctyp.eq.'CCSD[T] ') then
+               ktype=ksdt1
+            else if (cctyp.eq.'CCSD(T) ') then
+               ktype=ksdt2
+            else if (cctyp.eq.'CR-CCL  ') then
+               ktype=kccl
+            else if (cctyp.eq.'CCSDT   ') then
+               ktype=ksdt
+            else
+               write(io,*) 'Warning: unknown CCTYP!'
+            end if
+         end if
+C
+         nca=KCA(i)
+         ncb=KCB(i)
+         noa=KOA(i)
+         nob=KOB(i)
+         allocate(EMO(noa),EMO0(noa),MOCEN(noa),MOOCC(noa))
+         call iread8(icim, '$MO-OCC', noa, MOOCC)
+         call iread8(icim, '$MO-CEN', noa, MOCEN)
+         EMO  = 0.0D+00
+         EMO0 = 0.0D+00
+         if (maxl.ne.minl) then
+            close(icim)
+         else
+            if(.not.finalonly) then
+               close(icim,status='delete')
+            else
+               close(icim)
+            endif
+         endif
+C
+C        tmpname= pfxname(k1:k2)//'_Sys-'//line(k3:k4)//'.gamess'
+C        if (kerr.eq.0) then
+C           ierr=system('cat '//trim(tmpname)//' >> '//trim(logname))
+C        endif
+C
+         cimname=pfxname(k1:k2-3)//'Sys-'//line(k3:k4)//'.cim'       !-WL- 2009.05.07
+         inquire(file=cimname,exist=exst)
+         if (.not. exst) then
+            write(io,*) 'WARNING: '//trim(cimname)//' not found'
+            write(io,*) 'No corr. energy for the LMOs in the subsystem'
+            write(io,*)
+            cycle
+         endif
+C
+         open(icim,file=cimname,form='formatted')       !-WL- 2009.05.07
+
+C-WL-    Alpha MP2
+         if ((mplevl.ne.0 .or. cctyp.ne.'NONE    ') 
+     &     .and. scftyp.eq.'RHF     ') then
+            call rread(icim, '$CORR-MP2 ', noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               L=MOOCC(k)
+               if (MOLevl(L).lt.1) cycle
+               EEA(L,kmp2)=EEA(L,kmp2)+EMO(k)
+               NNA(L,kmp2)=NNA(L,kmp2)+1
+
+               if (SYSLevl(i).eq.1 .or. MOLevl(L).eq.1) then
+                  EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                  NNA(L,kavg)=NNA(L,kavg)+1
+               endif
+            enddo
+         endif
+C
+C-WL-    Alpha SCS-MP2
+         if (mplevl.ne.0.and.scftyp.eq.'RHF     '.and.maxtyp.eq.0) then
+            call rread(icim, '$CORR-SCS-MP2 ', noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               L=MOOCC(k)
+               if (MOLevl(L).lt.1) cycle
+               EEA(L,kscs)=EEA(L,kscs)+EMO(k)
+               NNA(L,kscs)=NNA(L,kscs)+1
+            enddo
+
+            call TWOENGY(i,io,icim,ntwo,KTWO,KTS,E2BDY,NFRG,ngroup)
+c           if (i.le.ngroup2) then
+               call TWOENGY2(io,icim,NFRG,ngroup2, !NO,noa,MOOCC,MOCEN,
+     &              ECC,ECE,EEE,NCC,NCE,NEE)
+c           endif
+            call SUBENGY(io,icim,'ENERGY  ',ESUBSYS(i),
+     &           ECENTRAL(i),ETWOBODY(i))
+         endif
+C
+C-WL-    Alpha CCD
+         if (cctyp.eq.'CCD     ') then
+            call rread(icim, '$CORR-CCD ',  noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               L=MOOCC(k)
+               if (MOLevl(L).lt.2) cycle
+               EEA(L,kccd)=EEA(L,kccd)+EMO(k)
+               NNA(L,kccd)=NNA(L,kccd)+1
+
+               if (SYSLevl(i).eq.2 .or. MOLevl(L).eq.2) then
+                  EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                  NNA(L,kavg)=NNA(L,kavg)+1
+               endif
+            enddo
+         endif
+C
+C-WL-    Alpha CCSD
+         if (cctyp.eq.'CCSD    ') then
+            call rread(icim, '$CORR-CCSD ', noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               L=MOOCC(k)
+               if (MOLevl(L).lt.3) cycle
+               EEA(L,ksd)=EEA(L,ksd)+EMO(k)
+               NNA(L,ksd)=NNA(L,ksd)+1
+
+               if (SYSLevl(i).eq.3 .or. MOLevl(L).eq.3) then
+                  EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                  NNA(L,kavg)=NNA(L,kavg)+1
+               endif
+            enddo
+         endif
+C
+C-WL-    Alpha CR-CC(2,3)
+         if (cctyp.eq.'CR-CCL  ') then
+            call rread(icim, '$CORR-CCSD ', noa, EMO0)
+            call rread(icim, '$CORR-CR-CC(2,3) ', noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               EMO(k)=EMO(k)+EMO0(k)
+
+               L=MOOCC(k)
+               if (MOLevl(L).ne.5) cycle
+               EEA(L,ksd)=EEA(L,ksd)+EMO0(k)
+               NNA(L,ksd)=NNA(L,ksd)+1
+
+               EEA(L,kccl)=EEA(L,kccl)+EMO(k)
+               NNA(L,kccl)=NNA(L,kccl)+1
+
+               if (SYSLevl(i).eq.5 .or. MOLevl(L).eq.5) then
+                  EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                  NNA(L,kavg)=NNA(L,kavg)+1
+               endif
+            enddo
+C
+            if (scftyp.eq.'RHF     ') then
+               call rread(icim, '$CORR-CCSD(2)_T ', noa, EMO)
+               do k=1,noa
+                  if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+                  EMO(k)=EMO(k)+EMO0(k)
+            
+                  L=MOOCC(k)
+                  if (MOLevl(L).ne.5) cycle
+            
+                  EEA(L,ksd2t)=EEA(L,ksd2t)+EMO(k)
+                  NNA(L,ksd2t)=NNA(L,ksd2t)+1
+               enddo
+            endif
+         endif
+C
+C-WL-    CCSD[T] AND CCSD(T)
+         if (cctyp.eq.'CCSD(T) '.or.cctyp.eq.'CCSD[T] ') then
+            call rread(icim, '$CORR-CCSD ', noa, EMO0)
+            call rread(icim, '$CORR-CCSD[T] ', noa, EMO)
+            do k=1,noa
+               if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+               EMO(k)=EMO(k)+EMO0(k)
+
+               L=MOOCC(k)
+               if (MOLevl(L).ne.4) cycle
+               EEA(L,ksd)=EEA(L,ksd)+EMO0(k)
+               NNA(L,ksd)=NNA(L,ksd)+1
+
+               EEA(L,ksdt1)=EEA(L,ksdt1)+EMO(k)
+               NNA(L,ksdt1)=NNA(L,ksdt1)+1
+
+               if (SYSLevl(i).eq.4 .or. MOLevl(L).eq.4) then
+                  EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                  NNA(L,kavg)=NNA(L,kavg)+1
+               endif
+            enddo
+
+            if (cctyp.eq.'CCSD(T) ') then
+               call rread(icim, '$CORR-CCSD(T) ', noa, EMO)
+               do k=1,noa
+                  if (MOCEN(k).ne.1 .and. MOCEN(k).ne.2) cycle
+                  EMO(k)=EMO(k)+EMO0(k)
+
+                  L=MOOCC(k)
+                  if (MOLevl(L).ne.4) cycle
+                  EEA(L,ksdt2)=EEA(L,ksdt2)+EMO(k)
+                  NNA(L,ksdt2)=NNA(L,ksdt2)+1
+             
+                  if (SYSLevl(i).eq.4 .or. MOLevl(L).eq.4) then
+                     EEA(L,kavg)=EEA(L,kavg)+EMO(k)
+                     NNA(L,kavg)=NNA(L,kavg)+1
+                  endif
+               enddo
+            endif
+         endif
+C
+         deallocate(EMO,EMO0,MOCEN,MOOCC)
+C        close(itmp)
+         if (maxl.ne.minl) then
+            close(icim)
+         else
+            if(.not.finalonly) then
+               close(icim,status='delete')
+            else
+               close(icim)
+            endif
+         endif
+ 200  ENDDO
+C
+C --- Scaling the multi-counted MO energies: ALPHA
+      do i=kmin,kmax
+         do j=ncor+1,NO
+            k=NNA(j,i)
+            if (k.eq.0.or.k.eq.1) cycle
+            EEA(j,i)=EEA(j,i)/NNA(j,i)
+         enddo
+      enddo
+C
+C --- 2008.03.04 add for symmetry ---
+      if (ISymm.ne.0) then
+         do i=kmin,kmax
+            do j=ncor+1,NO
+               L=KSymm(j)
+               if (L.eq.0) cycle
+               EEA(j,i)=EEA(L,i)
+            enddo
+         enddo
+      endif
+C
+C --- Find the best results --- 
+C     IMPORTANT: suppose the last one is the best
+      do j=ncor+1,NO
+         do i=kmax,kmin,-1
+            if (i.eq.kavg) cycle
+            if (i.eq.khgh) cycle
+            k=NNA(j,i)
+            if (k.gt.0) then
+               EEA(j,khgh)=EEA(j,i)
+               NNA(j,khgh)=NNA(j,i)
+               exit
+            endif
+         enddo
+      enddo
+C
+C --- Scaling the multi-counted MO energies: ALPHA
+      DO i=kmin,kmax-iskip
+         mocorr(i)=NO-ncor
+         DO j=ncor+1,NO
+            ETOT(i)=ETOT(i)+EEA(j,i)
+            if (NNA(j,i).eq.0) mocorr(i)=mocorr(i)-1
+         ENDDO
+
+         if (mocorr(i).eq.0) cycle
+
+         if (i.eq.kmp2) then
+            ctypes(i)='MP2       '
+         elseif (i.eq.kscs) then
+            ctypes(i)='SCS-MP2   '
+         elseif (i.eq.kccd) then
+            ctypes(i)='CCD       '
+         elseif (i.eq.ksd) then
+            ctypes(i)='CCSD      '
+         elseif (i.eq.ksdt1) then
+            ctypes(i)='CCSD[T]   '
+         elseif (i.eq.ksdt2) then
+            ctypes(i)='CCSD(T)   '
+         elseif (i.eq.ksd2t) then
+            ctypes(i)='CCSD(2)_T '
+         elseif (i.eq.kccl) then
+            ctypes(i)='CR-CC(2,3)'
+         elseif (i.eq.kavg) then
+            ctypes(i)='AVERAGE   '
+         elseif (i.eq.khgh) then
+            ctypes(i)='HIGHER    '
+         else
+            ctypes(i)='UNKNOWN   '
+         endif
+C
+         if (nlmo.eq.0 .or. ctypes(i).eq.'CCSD      ') then
+            write(io,155) i, ctypes(i), mocorr(i), ETOT(i)
+            call PRTEMO(io,NO,ncor+1,NO,EEA(1,i),NNA(1,i))
+C           write(io,1001) (kk,eea(kk,i),nna(kk,i),kk=ncor+1,no)
+            write(io,*)
+         endif
+ 1001    format(3(i3,':',f11.6,' (',i2,')',2x))
+C
+      ENDDO
+ 155  format(1x,'TYPE',i4,':',2x,a10,3x,'N(CORR)=',i6,
+     &       5x,'E(CORR)=',f20.12)
+ 159  format(f11.6,i2)
+ 160  format(5(f11.6,i2))
+ 161  format(2x,5a13)
+c
+      ETOT0 = 0.0D+00
+      do i=1,nsy
+         ETOT0 = ETOT0 + ECENTRAL(i)
+      enddo
+c
+      write(io,*)
+      write(io,*) 'Original energy + selected 2-body energy'
+      write(io,299)
+      ETOT2A = 0.0D+00
+      ETOT2A1= 0.0D+00
+      ETOT2A2= 0.0D+00
+      write(io,282)
+      write(io,298)
+      if (ntwo2.gt.0) then
+         L1 = int(DTWO(ntwo1+1)-1.0D-12)+1
+         L2 = int(DTWO(ntwo)-1.0D-12)+1
+         DISMIN = dble(L1)
+         DISMAX = dble(L2)
+         write(io,260) DISMIN,DISMAX
+         allocate(E2D(L1:L2))
+         E2D = 0.0D+00
+      endif
+      do i=1,ntwo
+         k1=KTWO(2*i-1)
+         k2=KTWO(2*i)
+         write(io,285) i,k1,k2,E2BDY(i),KTS(i),CTWO(i),DTWO(i)
+         ETOT2A = ETOT2A + E2BDY(i)*CTWO(i)
+         if (i.le.ntwo1) then
+            ETOT2A1 = ETOT2A1 + E2BDY(i)*CTWO(i)
+         else
+            ETOT2A2 = ETOT2A2 + E2BDY(i)*CTWO(i)
+            do L=L1,L2
+               if (DTWO(i).le.dble(L)) E2D(L)=E2D(L)+E2BDY(i)*CTWO(i)
+            enddo
+         endif
+         if (i.eq.ntwo1) write(io,298)
+      enddo
+      write(io,299)
+      write(io,287) ETOT2A1,  ntwo1
+      write(io,288) ETOT2A2,  ntwo2
+      write(io,290) ETOT2A,   ntwo
+      write(io,298)
+      write(io,295) ETOT0+ETOT2A1 !, ETOT0+ETOT2B1
+C
+      if (ntwo2.gt.0) then
+         write(io,297)
+         write(io,*) 'ADDI TWO-BODY CORR. WITH DIFF DIS'
+         do L=L1,L2
+           write(io,'(f6.1,2F14.6)') dble(L),E2D(L),ETOT0+ETOT2A1+E2D(L)
+         enddo
+         write(io,297)
+         deallocate(E2D)
+      endif
+      write(io,296) ETOT0+ETOT2A  !,  ETOT0+ETOT2B
+C
+ 260  format(1X,'ADDITIONAL TWO-BODY FROM',F6.2,' ANGS TO',F6.2,' ANGS')
+ 282  format(5x,'NO:',4x,'TWO-FRAG',5x,
+     &      'E(2-BODY) @ Subsys    Coeff    Distance')
+ 285  format(1X,i6,'-',2i6,F14.6,i6,4x,f8.2,4x,f8.2)
+ 287  format(1X,'E(INNER TWO-BODY) =',F14.6,14x,'num =',i6)
+ 288  format(1X,'E(OUTER TWO-BODY) =',F14.6,14x,'num =',i6)
+ 290  format(1X,'E(ADDED TWO-BODY) =',F14.6,14x,'num =',i6)
+ 295  format(1X,'E(TOTAL+INNER-2B) =',F14.6,8x)
+ 296  format(1X,'E(TOTAL+TWO-BODY) =',F14.6,8x)
+ 297  format(1X,33('-'))
+ 298  format(1X,63('-'))
+ 299  format(1X,63('='))
+      write(io,*)
+C
+**    write(io,*) 'ECC()='
+**    call NJ_prtsym(io,ngroup2,ECC,'f14.6')
+**    write(io,*) 'NCC()='
+**    call NJ_prtsym(io,ngroup2,dble(NCC),'f14.0')
+**    write(io,*)
+**    write(io,*) 'ECE()='
+**    call NJ_prtsym(io,ngroup2,ECE,'f14.6')
+**    write(io,*) 'NCE()='
+**    call NJ_prtsym(io,ngroup2,dble(NCE),'f14.0')
+*     write(io,*)
+*     write(io,*) 'EEE()='
+*     call NJ_prtsym(io,ngroup2,EEE,'f14.6')
+*     write(io,*) 'NEE()='
+*     call NJ_prtsym(io,ngroup2,dble(NEE),'f14.0')
+*     write(io,*)
+C
+C
+      EEEE1 = 0d0
+      do i=1,ngroup2
+         if (NCC(i,i).ne.0) then
+            NCE(i,i)=0
+            NEE(i,i)=0
+            ECC(i,i)=ECC(i,i)/NCC(i,i)
+         endif
+         EEEE1 = EEEE1 + ECC(i,i)
+      enddo
+ 
+      EEEE2 = 0d0
+      do i=1,ngroup2-1
+         do j=i+1,ngroup2
+            if (NCC(j,i).ne.0) then
+               ECC(j,i)=ECC(j,i)/NCC(j,i)
+               NCE(j,i)=0
+               ECE(j,i)=0d0
+               NEE(j,i)=0
+               EEE(j,i)=0d0
+            else
+               ECC(j,i)=0d0
+            endif
+C
+            EEEE2 = EEEE2 + ECC(j,i) + ECE(j,i)/2
+C
+            if (NCE(j,i).ne.0) then
+               ECE(j,i)=ECE(j,i)/NCE(j,i)
+               NEE(j,i)=0
+               EEE(j,i)=0d0
+            else
+               ECE(j,i)=0d0
+            endif
+C
+            if (NEE(j,i).ne.0) then
+               EEE(j,i)=EEE(j,i)/NEE(j,i)
+            else
+               EEE(j,i)=0d0
+            endif
+         enddo
+      enddo
+      EEEE = EEEE1 + EEEE2
+C     IXX1 = mod(nint(abs(EEEE*1.0D+06)),1000)
+      write(io,'('' EEEE(0) ='',f14.6)'),EEEE
+C
+C --------------------------------------------------
+C     k1=0
+C     do i=1,ngroup2-1
+C        do j=i+1,ngroup2
+C           if (dabs(ECC(j,i)+ECE(j,i)).lt.1d-12) cycle
+C           k1=k1+1
+C        enddo
+C     enddo
+C --------------------------------------------------
+C     do L=2,20
+C        k2=0
+C        EEEE2 = 0d0
+C        do i=1,ngroup2-1
+C           do j=i+1,ngroup2
+C              if (dabs(ECC(j,i)+ECE(j,i)).lt.1d-12) cycle
+C              if (FF(j,i).le.dble(L)/2d0) then
+C                 EEEE2 = EEEE2 + ECC(j,i)+ECE(j,i)
+C                 k2=k2+1
+C              endif
+C           enddo
+C        enddo
+C        if (k2.eq.0) cycle
+C        write(io,702),EEEE1+EEEE2,dble(L)/2d0,k2,k1
+C        if (k2.eq.k1) exit
+C     enddo
+C702  format(1X,'EEEE(1) =',f14.6,' (',f3.1,')',i4,'/',i4)
+C --------------------------------------------------
+C
+      EEEE2 = 0d0
+      do i=1,ngroup2-1
+         do j=i+1,ngroup2
+            EEEE2 = EEEE2 + ECC(j,i)+ECE(j,i)
+         enddo
+      enddo
+      write(io,'('' EEEE(1) ='',f14.6)'),EEEE1+EEEE2
+C
+C --------------------------------------------------
+C     k1=0
+C     do i=1,ngroup2-1
+C        do j=i+1,ngroup2
+C           if (dabs(EEE(j,i)).lt.1d-12) cycle
+C           k1=k1+1
+C        enddo
+C     enddo
+C
+C     do L=4,20
+C        k2=0
+C        EEEE3 = 0d0
+C        do i=1,ngroup2-1
+C           do j=i+1,ngroup2
+C              if (dabs(EEE(j,i)).lt.1d-12) cycle
+C              if (FF(j,i).le.dble(L)/2d0) then
+C                 EEEE3 = EEEE3 + EEE(j,i)
+C                 k2=k2+1
+C              endif
+C           enddo
+C        enddo
+C        if (k2.eq.0) cycle
+C        write(io,703),EEEE1+EEEE2+EEEE3,dble(L)/2d0,k2,k1
+C        if (k2.eq.k1) exit
+C     enddo
+C703  format(1X,'EEEE(2) =',f14.6,' (',f4.1,')',i4,'/',i4)
+C
+      EEEE3 = 0d0
+      do i=1,ngroup2-1
+         do j=i+1,ngroup2
+            EEEE3 = EEEE3 + EEE(j,i)
+         enddo
+      enddo
+      write(io,'('' EEEE(2) ='',f14.6)'),EEEE1+EEEE2+EEEE3
+c     write(io,*) 'EEEE(2A)=',EEEE1+EEEE2+ETOT2A2
+      write(io,*)
+C
+C -----------------------------------
+      k1 = 0
+      do i=1,ngroup2-1
+         do j=i+1,ngroup2
+            ECC(j,i) = ECC(j,i) + ECE(j,i) + EEE(j,i)
+            NCC(j,i) = NCC(j,i) + NCE(j,i) + NEE(j,i)
+            if (dabs(ECC(j,i)).lt.1d-12) cycle
+            k1 = k1 + 1
+         enddo
+      enddo
+C
+      EEEE = EEEE1
+      do L=3,20
+         k2 = 0
+         EEEE2 = 0d0
+         do i=1,ngroup2-1
+            do j=i+1,ngroup2
+c              ECC(j,i) = ECC(j,i) + ECE(j,i) + EEE(j,i)
+c              NCC(j,i) = NCC(j,i) + NCE(j,i) + NEE(j,i)
+               if (dabs(ECC(j,i)).lt.1d-12) cycle
+               if (FF(j,i).le.dble(L)) then
+                  EEEE2 = EEEE2 + ECC(j,i)
+                  k2 = k2 + 1
+               endif
+            enddo
+         enddo
+         if (k2.eq.0) cycle
+         write(io,704),EEEE1+EEEE2,L,k2,k1,EEEE1+EEEE2-EEEE
+         if (k2.eq.k1) exit
+         EEEE = EEEE1+EEEE2
+      enddo
+ 704  format(1X,'ECIM =',f14.6,' (',i2,')',i4,'/',i4,' DE =',f10.6)
+C
+      if(maxl.ne.minl) then
+         write(io,*) '-------------------------------------'
+         write(io,*) ' Summary of Highest level CIM Energy '
+         write(io,*) '-------------------------------------'
+      else
+         write(io,*) '-----------------------'
+         write(io,*) ' Summary of CIM Energy '
+         write(io,*) '-----------------------'
+      endif
+
+      write(io,1550) CWORK(51),EHF
+      do i=kmin,kmax-iskip
+         if (mocorr(i).eq.0) cycle
+         if (nlmo.ne.0.and.ctypes(i).eq.'MP2     ') then
+C           write(io,1549) nlmo
+            cycle
+         endif
+         if (mocorr(i).eq.NOeff) then
+            write(io,1551) ctypes(i),EHF+ETOT(i),NOeff,ETOT(i)
+            finalenergy=ehf+etot(i)
+         else
+            write(io,1552) ctypes(i),EHF+ETOT(i),mocorr(i),NOeff,ETOT(i)
+            finalenergy=ehf+etot(i)
+         endif
+      enddo
+      write(io,*)
+ 1549 format(1x,'E_CIM-MP2 is invalid for',i4,' LMO based subsystems')
+ 1550 format(1x,'E_', a8, 6x, ' =',f16.6)
+ 1551 format(1x,'E_CIM-',a10, ' =',f16.6,2x,  'for all of',i5,' MOs,',
+     &       2x,'E(CORR) =',f12.6)
+ 1552 format(1x,'E_CIM-',a10, ' =',f16.6,2x,'for',i4,' of',i5,' MOs,',
+     &       2x,'E(CORR) =',f12.6)
+C
+C     close(icim)
+      if (maxl.ne.minl) then
+         maxl=minl
+         iskip=0
+         goto 990
+      endif
+
+      if(.not.finalonly)
+     *   close(itx,status='delete')
+      call timit(1)
+C
+C --- Deallocate All Global Array
+      deallocate(KCA,KCB,KOA,KOB,KSymm)
+      deallocate(EEA,EEB,ETOT,mocorr,ctypes,CENRG)
+      deallocate(mplevls,cctyps,caltyp)
+      deallocate(NATs,NUMs,NOs,NUs)
+      deallocate(MOLevl,SYSLevl,KTWO,KTS,CTWO,DTWO,E2BDY,FF)
+      deallocate(ECC,ECE,EEE,NCC,NCE,NEE)
+C     close(iemo)
+C
+      END
+C
+C
+C
+C
+
+C
+C
+C
+C
+C
+
+C
+
+C
+C
+C
+C
+C
+
+C
+C
+C
+
+
+! ------
+C
+C
+C
+C
+C
+c     ##############################################################
+c     ##  subroutine NJ_seekchar -- Seek the n-th Char in inp     ##
+c     ##  2005.05.09 by Wei Li; Update 2005.10.16 by Wei Li       ##
+c     ##############################################################
+c
+      subroutine NJ_seekchar(inp,key,n,yes)
+      implicit none
+      integer inp,i,j,k,back,m,n,yes
+      character key*(*),line*256
+
+      back=0; m=0; yes=0
+      i=len(key)
+      call NJ_upper(key)
+ 200  do
+         read(inp,'(a)',err=800,end=800) line
+         call NJ_upper(line)
+         k=index(line,key(1:i))
+         if (k.ne.0) m=m+1
+         if (m==n) then
+            yes=1
+            backspace(inp); return
+         endif
+      enddo
+
+ 800  if (back==0) then
+         m=0; rewind(inp); back=1; goto 200
+      endif
+
+      end
+C
+C
+C
+C
+C
+C
+C
+C-WL- 11 SEP 2009 Find the header of CIM subsystem file
+      subroutine initsubs(io,igms)
+      implicit none
+      integer io,igms,i,j,k,L
+      character line*100
+      rewind(igms)
+      do
+         read(igms,'(a)',err=100,end=100) line
+         L=index(line,'=== GAMESS OUTPUT OF SUBSYSTEMS ===')
+         if (L.ne.0) exit
+      enddo
+      return
+
+ 100  write(io,*) 'Header of GAMESS subsystems file not find'
+      write(io,*) '=== GAMESS OUTPUT OF SUBSYSTEMS === required'
+      call abrt
+      end
+C
+C-WL- 11 SEP 2009 Find the ith subsystem
+      subroutine findsubs(io,igms,ith,kerr)
+      implicit none
+      integer io,igms,ith,kerr,i,j,k1,L
+      character(len=8) cnum
+      character(len=100) line
+
+      write(cnum,'(i8)') ith
+      do i=1,8
+         if (cnum(i:i).ne.' ') then
+            k1=i
+            exit
+         endif
+      enddo
+
+      do
+         read(igms,'(a)',err=100,end=100) line
+         L=index(line,'Sys-'//cnum(k1:8))
+         if (L.ne.0) then
+            do i=1,7
+               backspace(igms)
+            enddo
+            exit
+         endif
+      enddo
+      kerr=0
+      return
+
+ 100  write(io,*) 'Can not find the subsystem:',ith
+      kerr=1
+      end
+C
+C-WL- 17 SEP 2009 Find the time
+      subroutine readsubs(io,ig,Tmp2,Tccd,Teom,Ttri,
+     &           Tcpu,Twal,Mmin,Mmax,Mmp2,NmoPs,NPass,
+     &           Msrt,Mmst,Mccd,Mtri,Disk,Host)
+      implicit none
+      real(kind=8) ZERO,GB2W,GB2B
+      parameter(ZERO=0.00D+00,GB2W=134217728D+00,GB2B=1073741824D+00)
+      integer io,ig,i,j,k,L,m,n,k1,k2,k3,k4,k5,k6
+      real(kind=8) Tmp2,Tccd,Teom,Ttri,Tcpu,Twal
+      real(kind=8) Mmin,Mmax,Mmp2,Msrt,Mmst,Mccd,Mtri,Disk
+      integer Lmin,Lmax,Lmp2,Lsrt,Lmst,Lccd,Ltri,Ldisk
+      integer NmoPs,NPass
+      character(len=500) line,line1,line2,line3
+      character(len=20) ch(10)
+      character(len=32) Host
+
+      Tmp2 = ZERO
+      Tccd = ZERO
+      Teom = ZERO
+      Ttri = ZERO
+      Tcpu = ZERO
+      Twal = ZERO
+      Host = 'UNKNOWN'
+
+      Lmin = 0
+      Lmax = 0
+      Lmp2 = 0
+      Lsrt = 0
+      Lmst = 0
+      Lccd = 0
+      Ltri = 0
+      LDisk= 0
+
+      NmoPs= 0
+      NPass= 0
+
+      do
+         read(ig,'(a)',end=999,err=999) line
+
+C-WL-    Used Disk Space: Ldisk in Bytes.
+         k = index(line,'Files used on the master node')
+         if (k.ne.0) then
+            do 
+               read(ig,'(a)',end=100,err=100) line
+               if (index(line,'Sys-').eq.0) exit
+               read(line,*,end=100,err=100) (ch(i),i=1,4),L
+               LDisk = Ldisk + L
+            enddo
+ 100        exit
+         endif
+
+C-WL-    Hostname
+         k = index(line,'This job is running on host')
+         if (k.ne.0) then
+            Host=line(29:60)
+         endif
+
+C-WL-    MP2 CPU Time: Tcpu in sec.
+         k = index(line,'..... DONE WITH MP2')
+         if (k.ne.0) then
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=110,err=110)
+     &          (ch(i),i=1,3),Tmp2,(ch(i),i=5,7),Tcpu
+         endif
+ 110     continue
+
+C-WL-    CCSD or CCD CPU Time: Tccd in sec. (and Tot CPU Time for RO-CC)
+         k = index(line,'....... DONE WITH CC')
+         k = k*index(line,'AMPLITUDE ITERATION')
+         if (k.ne.0) then
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=120,err=120) (ch(i),i=1,3),Tccd,
+     &          (ch(i),i=4,6),Tcpu
+         endif
+ 120     continue
+
+C-WL-    EOM-CCSD CPU Time: Teom in sec.
+         k = index(line,'..... DONE WITH EOM-CC')
+         k = k + index(line,'....... DONE WITH LAMBDA AMPLITUDE ITER')
+         if (k.ne.0) then
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=130,err=130) (ch(i),i=1,3),Teom
+         endif
+ 130     continue
+
+C-WL-    CR-CC(2,3) or CCSD(T) Triples Correction CPU Time: Ttri in sec.
+         k = index(line,'..... DONE WITH CC NON-ITERATIVE TRIPLES CORR')
+         k = k + index(line,'DONE WITH MMCC(2,3) TRIPLES CORRECTIONS')
+         if (k.ne.0) then
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=140,err=140) (ch(i),i=1,3),Ttri
+         endif
+ 140     continue
+
+C-WL-    Total CPU Time: Tcpu in sec.
+         k = index(line,'TOTAL CPU TIME =')
+         if (k.ne.0) then
+            call rplblank(line,'=')
+            read(line,*,end=150,err=150) (ch(i),i=1,7),Tcpu
+         endif
+ 150     continue
+
+C-WL-    Total Wall Time: Twal in sec.
+         k = index(line,'TOTAL WALL CLOCK TIME=')
+         if (k.ne.0) then
+            call rplblank(line,'=')
+            read(line,*,end=160,err=160) (ch(i),i=1,4),Twal
+         endif
+ 160     continue
+
+C-WL-    Required Memory for MP2 Transformation:
+C        Lmin in words for minimum memory
+C        Lmax in words for maximum memory
+C        Lmp2 in words for used memory
+         k =index(line,'MEMORY REQUIREMENTS FOR SEGMENTED MP2 TRANS')
+         if (k.ne.0) then
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=210,err=210) ch(1),Lmin
+
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=210,err=210) ch(1),Lmax
+
+            read(ig,'(a)') line
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line(22:28),*,end=210,err=210) NmoPs
+
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=210,err=210) (ch(i),i=1,3),NPass
+
+            read(ig,'(a)') line
+            call rplblank(line,'=')
+            read(line,*,end=210,err=210) (ch(i),i=1,2),Lmp2
+         endif
+ 210     continue
+
+C-WL-    Required Memory for CC integral sorting:
+C        Lsrt in words for used memory
+C        Lmst in words for minimum memory
+         k1 = index(line,'MEMORY TO BE USED IN CC INTEGRAL SORTING IS')
+         if (k1.ne.0) then
+            read(line,*,end=220,err=220) (ch(i),i=1,9),Lsrt
+            read(ig,'(a)') line
+            read(line,*,end=220,err=220) (ch(i),i=1,7),Lmst
+         endif
+         k2 = index(line,'MEMORY NEEDED BY INT. PASS 2        :')
+         if (k2.ne.0) then
+            read(line,*,end=220,err=220) (ch(i),i=1,7),Lsrt
+         endif
+ 220     continue
+
+C-WL-    Required Memory for CCSD Iterations: Lccd
+         k1 = index(line,'MEMORY REQUIRED FOR THE CCSD ITERATIONS IS')
+         if (k1.ne.0) then
+            read(line,*,end=230,err=230) (ch(i),i=1,7),Lccd
+         endif
+         k2 = index(line,'MEMORY NEEDED BY CCSD    :')
+         if (k2.ne.0) then
+            read(line,*,end=230,err=230) (ch(i),i=1,5),Lccd
+         endif
+ 230     continue
+
+         k = index(line,'MEMORY REQUIRED FOR XT3WT2NNN=')
+         if (k.ne.0) then
+            call rplblank(line,'=')
+            read(line,*,end=240,err=240) (ch(i),i=1,4),Ltri
+         endif
+ 240     continue
+
+         k = index(line,'MEMORY REQUIRED FOR NONITERATIVE TRIPLES (T3W')
+         if (k.ne.0) then
+            read(line,*,end=250,err=250) (ch(i),i=1,8),Ltri
+         endif
+ 250     continue
+
+         k = index(line,'MEMORY NEEDED BY MM(2,3) :')
+         if (k.ne.0) then
+            read(line,*,end=260,err=260) (ch(i),i=1,6),Ltri
+         endif
+ 260     continue
+
+      enddo
+
+ 999  Tmp2 = Tmp2/60d0
+      Tccd = Tccd/60d0
+      Teom = Teom/60d0
+      Ttri = Ttri/60d0
+      Tcpu = Tcpu/60d0
+      Twal = Twal/60d0
+       
+      Mmin = Lmin/GB2W
+      Mmax = Lmax/GB2W
+      Mmp2 = Lmp2/GB2W
+      Msrt = Lsrt/GB2W
+      Mmst = Lmst/GB2W
+      Mccd = Lccd/GB2W
+      Mtri = Ltri/GB2W
+      Disk = LDisk/GB2B
+
+      return
+      end
+C
+C
+C --- 2008.04.21 Replace ch with blank
+      subroutine rplblank(line,ch)
+      character line*(*),ch
+      L=len(line)
+      do i=1,L
+         if (line(i:i).eq.ch) line(i:i)=' '
+      enddo
+      end
+C
+
+C-WL- 7 Apr 2009: Read infomation from .dat file
+      subroutine CIMINFO(io,itx,NAT,ICH,MUL,NE,NA,NB,NBS,NMO,
+     &           NSHELL,NGAUSS,ENU,SCFTYP,EHF)
+      implicit none
+      integer io,itx,NAT,ICH,MUL,NE,NA,NB,NBS,NMO,NSHELL,NGAUSS
+      character(len=8) SCFTYP
+      real(kind=8) ENU,EHF
+      integer i,j,k,L,m,n,k1,k2,k3,k4,k5,k6
+      character(len=200) line
+C
+      rewind(itx)
+      do
+         read(itx,'(a)',end=100,err=100) line
+         if (index(line,'NAT   =').ne.0) then
+            read(line(8:200),*) NAT
+         else if (index(line,'ICH   =').ne.0) then
+            read(line(8:200),*) ICH
+         else if (index(line,'MUL   =').ne.0) then
+            read(line(8:200),*) MUL
+         else if (index(line,'NE    =').ne.0) then
+            read(line(8:200),*) NE
+         else if (index(line,'NA    =').ne.0) then
+            read(line(8:200),*) NA
+         else if (index(line,'NB    =').ne.0) then
+            read(line(8:200),*) NB
+         else if (index(line,'NUM   =').ne.0) then
+            read(line(8:200),*) NBS
+         else if (index(line,'NSHELL=').ne.0) then
+            read(line(8:200),*) NSHELL
+         else if (index(line,'NGAUSS=').ne.0) then
+            read(line(8:200),*) NGAUSS
+         else if (index(line,'ENUCR =').ne.0) then
+            read(line(8:200),*) ENU
+         else if (index(line,'NMO   =').ne.0) then
+            read(line(8:200),*) NMO
+         else if (index(line,'E(RHF)=').ne.0) then
+            read(line(8:200),*) EHF
+            scftyp='RHF     '
+         else if (index(line,'E(UHF)=').ne.0) then
+            read(line(8:200),*) EHF
+            scftyp='UHF     '
+         else if (index(line,'E(ROHF)=').ne.0) then
+            read(line(9:200),*) EHF
+            scftyp='ROHF    '
+         endif
+      end do
+C
+ 100  if (io>0) then
+         write(io,*) '+++ Read information from .dat file +++'
+         write(io,'(1x,44(''-''))')
+         write(io,*) 'Number of atoms                ',NAT
+         write(io,*) 'Charge                         ',ICH
+         write(io,*) 'Multiplicity                   ',MUL
+         write(io,*) 'Number of electrons            ',NE
+         write(io,*) 'Number of alpha electrons      ',NA
+         write(io,*) 'Number of beta electrons       ',NB
+         write(io,*) 'Number of basis functions      ',NBS
+         write(io,*) 'Number of independant functions',NMO
+         write(io,*) 'Number of contracted shells    ',NSHELL
+         write(io,*) 'Number of primitive shells     ',NGAUSS
+         write(io,'('' Nuclear Repulsion Energy'',f20.9)') ENU
+         write(io,'('' SCF type = '',a8)') scftyp
+         write(io,'('' SCF energy='',f20.9)') EHF
+         write(io,'(1x,44(''-''))')
+         write(io,*)
+      endif
+C
+      end
+
+C
+C --- Print help infomation of this MP2 program ---
+      subroutine cimf_help(io)
+      implicit none
+      integer io,i,j
+      write(io,'(1x,67("="))')
+      write(io,66)'CIMF - FINALIZATION OF CIM SUBSYSTEMS '
+     &          //'VERSION 0.06 (24 AUG 2010)'
+      write(io,'(1x,67("="))')
+      write(io,66)
+      write(io,66)'-- REQUIREMENTS --'
+      write(io,66)' GAMESS [15 OCT 2009]:'  
+     &          //' See http://www.msg.chem.iastate.edu/gamess/'
+      write(io,66)
+      write(io,66)'-- PROGRAMMERS --'
+      write(io,66)' Michigan State Univ.:'
+     &          //' W. Li, P. Piecuch, and J. R. Gour'
+      write(io,66)' Nanjing Univ.: S. Li, J. Shen, and W. Li'
+      write(io,66)
+      write(io,66)'-- REFERENCES --'
+      write(io,66)' 1. S. Li, J. Ma, and Y. Jiang,'
+     &          //' J. Comput. Chem. 23, 237 (2002).'
+      write(io,66)' 2. S. Li, J. Shen, W. Li, and Y. Jiang,'
+     &          //' J. Chem. Phys. 125, 074109 (2006).'
+      write(io,66)' 3. W. Li, P. Piecuch, and J. R. Gour, in'
+     &          //' Theory and Applications of Computational'
+      write(io,66)'    Chemistry, AIP Conference Proceedings,'
+     &          //' Vol. 1102, edited by D. Wei'
+      write(io,66)'    (American Physical Society, Melville, NY,'
+     &          //' 2009), pp. 68-113.'
+      write(io,66)' 4. W. Li, P. Piecuch, and J. R. Gour, in'
+     &          //' Advances in the Theory of Atomic and'
+      write(io,66)'    Molecular Systems: Conceptual and Computational'
+     &          //' Advances in Quantum Chemistry'
+      write(io,66)'    Series, Progress in Theoretical Chemistry and'
+     &          //' Physics,Vol. 19, edited by'
+      write(io,66)'    P. Piecuch, J. Maruani, G. Delgado-Barrio,'
+     &          //' and S. Wilson'
+      write(io,66)'    (Springer Berlin, 2009), pp. 131-195.'
+      write(io,66)' 5. W. Li, P. Piecuch, J. R. Gour, and S. Li,'
+     &          //' J. Chem. Phys. 131, 114109 (2009).'
+      write(io,66)' 6. W. Li and P. Piecuch, J. Phys. Chem. A,'
+     &          //' Publication on Web: April 7, 2010.'
+      write(io,66)'    DOI: 10.1021/jp100782u.'
+      write(io,66)' 7. W. Li and P. Piecuch, J. Phys. Chem. A'
+     &          //' 114, 6721 (2010).'
+      write(io,66)
+C
+      if (io>0) return
+C
+      write(io,66)'-- USAGE --'
+      write(io,66)' cimf [arguments] file'
+      write(io,66)'   .out file will be updated with CIM energies'
+      write(io,66)
+      write(io,66)'-- ARGUMENTS --'
+      write(io,66)' -h or --help: Print Help (this message) and exit'
+      write(io,66)
+      if (io==0) call abrt 
+ 66   format(1x,a)
+      end
+C
+
+      subroutine SUBREAD(icim,TIMS,RAMS)
+      implicit none
+      integer NDIM
+      real(kind=8) ZERO,GB2W,W2GB,S2MIN
+      parameter(NDIM=10,ZERO=0.00D+00,GB2W=134217728D+00)
+      parameter(W2GB=1.0D+00/GB2W,S2MIN = 1.0D+00/60.0D+00)
+      integer icim,i,j,k,L,k1,k2,k3,k4
+      real(kind=8) TIMS(NDIM),RAMS(NDIM)
+      character(len=200) line
+C
+      CALL VCLR(TIMS,1,NDIM)
+      CALL VCLR(RAMS,1,NDIM)
+      do
+         read(icim,'(a)',end=200,err=200) line
+         k = index(line,' IS')
+         if (k.ne.0) line(k:k+2)=' = '
+         k = index(line,' :')
+         if (k.ne.0) line(k:k+1)=' ='
+C
+         call RVALU(line,'STEP CPU TIME FOR MP2',      TIMS(1))
+         call RVALU(line,'STEP CPU TIME FOR EOM-CCSD', TIMS(2))
+         call RVALU(line,'STEP CPU TIME FOR CCD',      TIMS(3))
+         call RVALU(line,'STEP CPU TIME FOR CCSD',     TIMS(3))
+         call RVALU(line,'STEP CPU TIME FOR CCSD(T)',  TIMS(4))
+         call RVALU(line,'STEP CPU TIME FOR CR-CCL',   TIMS(4))
+         call RVALU(line,'TOTAL CPU TIME FOR SUBSYSTEM',   TIMS(6))
+C
+         call RVALU(line,'MINIMUM',      RAMS(2))
+         call RVALU(line,'MAXIMUM',      RAMS(1))
+         call RVALU(line,'MEMORY USED',  RAMS(3))
+         call RVALU(line,'MEMORY REQUIRED FOR THE CCD ITERATIONS',
+     &   RAMS(4))
+         call RVALU(line,'MEMORY REQUIRED FOR THE CCSD ITERATIONS',
+     &   RAMS(4))
+         call RVALU(line,'MEMORY NEEDED BY CCSD',   RAMS(4))
+         call RVALU(line,
+     &   'MEMORY REQUIRED FOR NONITERATIVE TRIPLES (T3WT2  )',RAMS(5))
+         call RVALU(line,'MEMORY REQUIRED FOR XT3WT2NNN',  RAMS(5))
+         call RVALU(line,'MEMORY NEEDED BY MM(2,3)',RAMS(5))
+      enddo
+C
+ 200  continue
+      CALL VECMUL(TIMS,NDIM,S2MIN)
+      CALL VECMUL(RAMS,NDIM,W2GB)
+      TIMS(5) = TIMS(1)+TIMS(2)+TIMS(3)+TIMS(4)
+      end
+
+      SUBROUTINE PRTEMO(io,n,L1,L2,E,M)
+      IMPLICIT DOUBLE PRECISION(A-H,O-Z)
+      real(kind=8) E(n)
+      integer M(n)
+      character line*72,fmt1*50,fmt2*50,uncalc*13,newstr*13
+C
+      ncol = 5
+      num  = L2-L1+1
+      nlst = mod(num,ncol)
+      nful = num/ncol
+      if (nlst.eq.0) then
+         ntot = nful
+      else
+         ntot = nful + 1
+      end if
+      uncalc = '   0.000000 0'
+      newstr = '   0.       0'
+C
+      write(fmt1,9000) ncol
+      write(fmt2,9000) nlst
+      do i=1,ntot
+         k1 = (i-1)*ncol+L1
+         kn = i*ncol+L1-1
+         if (kn.le.L2) then
+            write(line,fmt1) k1,(E(k),M(k),k=k1,kn)
+         else
+            kn = L2
+            write(line,fmt2) k1,(E(k),M(k),k=k1,kn)
+         endif
+         do j=1,ncol
+            L = index(line,uncalc)
+            if (L.ne.0) line(L:L+12)=newstr
+         enddo
+         write(io,9010) line
+      enddo
+C
+c9000 format(i5,2x,5(f11.6,i2))
+ 8999 format('(LMO   ','ENERGY ','COUNT')
+ 9000 format('(i5,2x,',i2,'(f11.6,i2))')
+ 9010 format(a)
+      end
+C
+C --- 19 AUG 10 --- READING INFORMATION FROM .CIM FILE
+      SUBROUTINE SUBENGY(io,inp,GROUP,ESUBSYS,ECENTRAL,ETWOBODY)
+      implicit none
+      integer io,inp,i,j,k,L,m,n
+      character(len=8) GROUP
+      character(len=200) line
+      real(kind=8) ESUBSYS,ECENTRAL,ETWOBODY
+C
+      ESUBSYS  = 0.0D+00
+      ECENTRAL = 0.0D+00
+      ETWOBODY = 0.0D+00
+C
+      do
+         read(inp,'(a)',end=100,err=100) line
+         call NJ_upper(line)
+         L=index(line,'$'//trim(GROUP))
+         if (L.ne.0) goto 100
+      enddo
+ 100  continue
+      do
+         read(inp,'(a)',end=200,err=200) line
+         call NJ_upper(line)
+         L=index(line,'$END')
+         if (L.ne.0) goto 200
+C
+         if (GROUP.EQ.'ENERGY  ') then
+            call RVALU(line, 'E(CORR-SUBSYS)',  ESUBSYS)
+            call RVALU(line, 'E(CORR-CENTRAL)', ECENTRAL)
+            call RVALU(line, 'E(CORR-TWOBODY)', ETWOBODY)
+         endif
+C
+      enddo
+ 200  continue
+C
+      return
+      end
+
+C
+C --- 19 AUG 10 --- READING INFORMATION FROM .CIM FILE
+      SUBROUTINE TWOENGY(ith,io,inp,ntwo,KTWO,KTS,E2BDY,NFRG,NGROUP)
+      implicit none
+      integer io,inp,i,j,k,L,m,n,ntwo,ith,k1,k2,L1,L2,NFRG,NGROUP
+      character(len=200) line
+      integer KTWO(2*ntwo),KTS(ntwo)
+      real(kind=8) E2BDY(ntwo)
+      integer,allocatable::IDXF(:)
+      real(kind=8),allocatable::ETWO(:,:)
+C
+      allocate(IDXF(NFRG),ETWO(NFRG,NFRG))
+      call iread(inp, '$FRG-INDX', NFRG, IDXF)
+      call rread(inp, '$CORR-FRG', NFRG*NFRG, ETWO)
+C
+      do i = 1,ntwo
+         k1 = KTWO(2*i-1)
+         k2 = KTWO(2*i)
+         if (KTS(i).ne.ith) cycle
+         do j = 1,NFRG-1
+            L1 = IDXF(j)
+            if (L1.ne.k1.and.L1.ne.k2) cycle
+            do k = j+1,NFRG
+               L2 = IDXF(k)
+               if (L2.ne.k2.and.L2.ne.k1) cycle
+               if (L1.eq.k1.and.L2.eq.k2.or.L1.eq.k2.and.L2.eq.k1) then
+                  E2BDY(i) = ETWO(k,j)
+                  write(io,101) k1,k2,E2BDY(i),ith
+               endif
+            enddo
+         enddo
+      enddo
+C
+      deallocate(IDXF,ETWO)
+      return
+C
+ 110  format(1X,'E(',i6,',',i6')=',3x,'in subsys:',i6)
+ 101  format(1X,'E(',i6,',',i6')=',F14.10,3x,'in subsys:',i6)
+      end
+C
+C --- 19 AUG 10 --- READING INFORMATION FROM .CIM FILE
+      SUBROUTINE TWOENGY2(io,inp,NFRG,ngroup2, !NO,noa,MOOCC,MOCEN,
+     &           ECC,ECE,EEE,NCC,NCE,NEE)
+      implicit none
+      integer io,inp,i,j,k,L,m,n,k1,k2,L1,L2,ngroup2,NFRG
+      character(len=200) line
+      integer NCC(ngroup2,ngroup2)
+      integer NCE(ngroup2,ngroup2)
+      integer NEE(ngroup2,ngroup2)
+      real(kind=8) ECC(ngroup2,ngroup2)
+      real(kind=8) ECE(ngroup2,ngroup2)
+      real(kind=8) EEE(ngroup2,ngroup2)
+      real(kind=8),allocatable::ETWO(:,:)
+      integer,allocatable::IDXF(:),ICEN(:)
+C
+      allocate(IDXF(NFRG),ICEN(NFRG),ETWO(NFRG,NFRG))
+C
+      call iread(inp, '$FRG-INDX', NFRG, IDXF)
+      call iread(inp, '$FRG-CENT', NFRG, ICEN)
+      call rread(inp, '$CORR-FRG', NFRG*NFRG, ETWO)
+C
+      do i = 1,NFRG
+         k = IDXF(i)
+         L = ICEN(i)
+         if (L.eq.0) cycle
+         ECC(k,k) = ECC(k,k) + ETWO(i,i)
+         NCC(k,k) = NCC(k,k) + 1
+      enddo
+C
+      do i = 1,NFRG-1
+         k1 = IDXF(i)
+         L1 = ICEN(i)
+         do j = i+1,NFRG
+            k2 = IDXF(j)
+            L2 = ICEN(j)
+            if (L1.ne.0.and.L2.ne.0) then
+               ECC(k2,k1) = ECC(k2,k1) + ETWO(j,i)
+               ECC(k1,k2) = ECC(k1,k2) + ETWO(j,i)
+               NCC(k2,k1) = NCC(k2,k1) + 1
+               NCC(k1,k2) = NCC(k1,k2) + 1
+            elseif ((L1.eq.0.and.L2.ne.0).or.(L1.ne.0.and.L2.eq.0)) then
+               ECE(k2,k1) = ECE(k2,k1) + ETWO(j,i)
+               ECE(k1,k2) = ECE(k1,k2) + ETWO(j,i)
+               NCE(k2,k1) = NCE(k2,k1) + 1
+               NCE(k1,k2) = NCE(k1,k2) + 1
+            elseif (L1.eq.0.and.L2.eq.0) then
+               EEE(k2,k1) = EEE(k2,k1) + ETWO(j,i)
+               EEE(k1,k2) = EEE(k1,k2) + ETWO(j,i)
+               NEE(k2,k1) = NEE(k2,k1) + 1
+               NEE(k1,k2) = NEE(k1,k2) + 1
+            endif
+         enddo
+      enddo
+C
+      deallocate(IDXF,ICEN,ETWO)
+      return
+C
+      end
+

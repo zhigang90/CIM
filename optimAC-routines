@@ -1,0 +1,43 @@
+      SUBROUTINE AddCON(IType,  ISign,  II,     JJ,     KK,
+      SUBROUTINE AddSCAN(MaxCON, NCons,  NAtoms, XC,     Coord,
+      SUBROUTINE AddSCANZ(MaxCON, NCons,  NZ,     XC,     Coord,
+      SUBROUTINE BackToZ(NZ,     NIC,    NVar,    IG,     XINT,
+      SUBROUTINE BCHECK(Nat3,   NPrim,  IPRNT,  NInt,   thrsh,
+      SUBROUTINE BINVT(NAtoms, intcor, IPRNT,  B,      BmBt,
+      SUBROUTINE BMAT2(I,      NAtoms, XC,     NIC,    ktyp,
+      SUBROUTINE BMATRIX(NAtoms, XC,     NIC,    ktyp,   klist,
+      SUBROUTINE BMatZ(NZ,XZ,IGEO,IPRNT,B)
+      SUBROUTINE BSCHMIDT(NAtoms, XC,     NPrim,  ktyp,   klist,
+      SUBROUTINE BSPARSE(NAtoms, XC,     NPrim,  ktyp,   klist,
+      SUBROUTINE BSYM(NAtoms, NInt,   NTrans, TRANS,  NEqATM,
+      SUBROUTINE BTRAN(NAtoms, XC,     NPrim,  ktyp,   klist,
+      SUBROUTINE ChkANG(NAtoms, NMol,   IMOL,   XC,     PThrsh,
+      SUBROUTINE ChkCART(NAT3,IPRNT,DCart,XOld,XC)
+      SUBROUTINE ChkCMPLT(NAtoms,IC,XC,IErr)
+      SUBROUTINE ChkCnnct(File,NAtoms,MaxC,IC)
+      SUBROUTINE ChkD(N,DMAX,IPRNT,D)
+      SUBROUTINE ChkDIH(RCon,Dih)
+      SUBROUTINE ChkDUM(NAtoms, NCons,  IDum,   XC,     ICTYP,
+      SUBROUTINE ChkHES(N,      NCons,  IPRNT,  U,      EigVal,
+      SUBROUTINE ChkHssINT(NAtoms, IAN,    XC,     NPrim,  NDEG,
+      SUBROUTINE ChkMAG(N,EigMIN,EigMAX,EigVAL)
+      SUBROUTINE ChkOPT(NCNTR,  NAtoms, NDum,   IOptC,  IType,
+      SUBROUTINE ChkOSCIL(NCount, NDim,   NCons,  ICTYP,  IC,
+      SUBROUTINE ChkROT(RM,IPRNT,thrsh,rotate)
+      SUBROUTINE ChkSCAL(NAT3,IPRNT,EigVal,HESS,scale)
+      SUBROUTINE ChkXSC(NAtoms,XC,IC)
+      SUBROUTINE CnvBACK(NCycle, NIC,    XINT,   QQ,     thrsh,
+      SUBROUTINE CnvCART(NAtoms, AtSymb, XC,     D,      GC,
+      SUBROUTINE CnvCON(NAtoms, NCNTR,  NCon,   AtSymb, XC,
+      SUBROUTINE CnvINT(NVar,   XINT,   D,      GC,     EC,
+      SUBROUTINE CONFormD(NCycle, NC,     N,      NCons,  NegReq,
+C  Set up for potential Hessian scaling in subroutine ChkSCAL
+C  Set up for potential Hessian scaling in subroutine ChkSKAL
+      SUBROUTINE ConGRAD(NCNTR,  NCons,  method, ICTYP,  RCON,
+      SUBROUTINE ConHESS(NCNTR,  NCons,  method, ICTYP,  IC,
+      SUBROUTINE ConINT(NAtoms, NCons,  XC,     ICTYP,  RCON,
+      SUBROUTINE CONNECTM(NAtoms,IAN,XC,thrbnd,IC,IErr)
+      SUBROUTINE CONJUGATE(NAtoms, N,      B,      BT,     C,
+      SUBROUTINE ConORD(NAT3,   NCon,   NDim,   NEG,    EigVAL,
+      SUBROUTINE ConVEC(NDEG,   NPrim,  NCons,  ICNUM,  ICOMP,
+      SUBROUTINE CpyMAT(N,N1,N2,A,B)

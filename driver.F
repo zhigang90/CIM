@@ -1,0 +1,876 @@
+      PROGRAM PQS2010
+
+#ifdef WINDOWS
+#ifdef  __INTEL_COMPILER
+      use IFQWIN ! Quick windows libraries
+#endif
+#endif
+      use memory   ! new Fortran 95 memory module
+      use messages
+
+      IMPLICIT REAL*8(A-H,O-Z)
+C
+C  =========================================================
+C  Header file for ab initio program PQS2010
+C  =========================================================
+C
+c     parameter (maxall=20000)      ! space for memory allocation table
+c     parameter (maxsh=120000)      ! length of integer common
+      character*256 version,revision,restrict,archit,
+     $             prodstr,parastr,nbostr,lockkey
+      integer*4 get_ncpus
+c
+c     common /mmanag/lcore,nreq,maxmem,mark,marks(100),nadr(maxall)
+c     common /intbl/ ilc,inx(maxsh)
+      common /errflag/ierrflag(10)
+#ifdef WINDOWS
+#ifdef  __INTEL_COMPILER
+      ires = SETEXITQQ(QWIN$EXITNOPERSIST) ! exit program without displaying a box
+#endif
+#endif
+c
+c -- initialize the time
+      call secund(t0)
+      call elapsec(tt0)
+
+      wbuf='' ! initialize message buffer
+
+      iseed = 0
+      call init_random( iseed ) ! initialize random number generator
+c
+      call izeroIT(ierrflag,10)     ! zero out error flag vector
+c     ilc=maxsh
+c     call retinall
+      call valinit
+      call matreset
+      call cpuset                   ! set machine-dependent stuff
+c
+c -- set physical and mathematical constants
+      call setdatan
+      call setconstn
+c
+c  set product string for license checking (in the parallel version it
+c  will be overwritten in para_driver) The product string should be 16
+c  characters long
+c
+      prodstr='pqs-serial40ver0'  ! for serial version
+cc      prodstr='pqs-serial33ver3' 
+      call setchval('prodstr',prodstr)
+      parastr='pqs-parall40ver0'  ! for parallel version
+cc      parastr='pqs-parall33ver3'
+      call setchval('parastr',parastr)
+      nbostr='pqs-nbo40   ver0'   ! for NBO license
+cc      nbostr='pqs-nbo33   ver3'
+      call setchval('nbostr',nbostr)
+      lockkey='PQS lockcode key'  ! lockcode key
+      call setchval('lockkey',lockkey)
+c
+c  set version and revision numbers, architecture and restriction strings
+c
+      version='4.1'
+      call setchval('version',version)
+c
+#ifdef REVISION
+      revision=REVISION
+#else
+      revision=''
+#endif
+      call setchval('revision',revision)
+c
+#ifdef TRIAL
+      restrict='Trial'
+#else
+      restrict='Full'
+#endif
+      call setchval('restrict',restrict)
+c
+#ifdef ARCHIT
+      archit=ARCHIT
+#else
+      archit=''
+#endif
+      call setchval('archit',archit)
+c
+c  flag for opening a jobname.err file containing the standard
+c  error. 0 do not open, 1 open it. This can be switched on from
+c  the command line, and is mainly meant for the windows intel version,
+c  to avoid opening up command line windows for displaying the error channel
+c
+#ifdef WINDOWS
+
+#ifdef  __INTEL_COMPILER
+      call setival('stderr',1) 
+
+                    ! save the error channel to a temporary
+                    ! file. This will be replaced later by
+                    ! jobname.err
+
+      open( 0, status='scratch', file='pqs.err')
+#else
+      call setival('stderr',0)
+#endif
+
+#else
+      call setival('stderr',0)
+#endif
+
+c  set number of cpus
+
+      ncpus=0
+      ncpus=get_ncpus()
+      call setival('ncpus',ncpus)
+c
+c -- <Para_Driver> simply calls <Driver> in the single processor version.
+c -- In the parallel version message passing is initialized,
+c -- master and slave fork and parallelism is finalized before ending.
+c -- In PVM the slaves are also started here.
+c
+      call Para_Driver
+c
+      stop ' JOB FINISHED'
+      end
+c======================================================================
+c
+      SUBROUTINE DRIVER
+cc      USE DFLIB                  ! For Windows
+      use memory   ! new Fortran 95 memory module
+      implicit real*8 (a-h,o-z)
+      parameter (ncmds=55) !NZG_4/16/2016 Add commands for CIM
+      integer optcyc,dyncyc,ffcyc,scyc,qcyc,nline
+      character*4 commands(ncmds),cmd,oldcmd
+      character*256 jobname,title,text,card,hname,inpname,progname,
+     $             prodstr
+      character*26 datestr,timestr
+      character*1 blank
+      logical back,cnvgd,gcard,qcard,basread,initial
+      integer*4 license,chklicense
+      common /tape/inp,inp2,iout,ipun,iarc,icond,itest,npl(9)
+c     parameter (maxall=20000)      ! space for memory allocation table
+c     common /mmanag/lcore,nreq,maxmem,mark,marks(100),nadr(maxall)
+c     common /big/bl(300)
+      common /errflag/ierrflag(10)
+      common /job/jobname,lenJ
+      data optcyc,dyncyc,ffcyc,scyc,qcyc,nline/0,0,0,0,0,0/
+      data blank/' '/
+      data zero/0.0d0/
+      data commands /'titl','file','cpu ','text','calc',
+     2               'geom','basi','inte','gues','scf ',
+     3               'forc','intc','freq','nbo ','pop ',
+     4               'pop=','semi','opti','mass','nmr ',
+     5               'lmp2','numh','rest','nucl','mp2 ',
+     6               'mem=','%mem','jump','clea','stop',
+     7               'hess','dyna','anfc','corr','ffld',
+     8               'prop','scan','path','qmmm','nump',
+     9               'pola','cosm','nume','numg','scfd',
+     9               'numc','sqm ','oldc','opt2','cim ',
+     &               'cims','    ','    ','    ','    '/
+c
+c
+c ............................................................
+c -- set up memory defaults
+#ifdef TRIAL
+      lcore = 2 000 000       ! trial version limited to two million double words
+#else
+      lcore = 6 000 000       ! six million double words
+#endif
+      incore = 0              ! default for in-core integral storage
+      indisk = 0              ! default for on-disk integral storage
+      initial=.false.         ! flag for slave initialization
+c
+c -- initialize the limits of the free program
+      maxnuc = 25
+      maxbas = 100
+      nwarn = 0
+c
+c  validate the program arguments and get program and input names
+c
+      call parsearguments(progname,inpname)
+      call setchval('progname',progname)
+      call leadblan2(inpname,256,Lenx)
+      call rmblan2(inpname,Lenx,LenIn)
+      call basename(inpname,256,jobname,LenJ)
+      if(LenIn.eq.LenJ) then
+        if(LenIn.gt.252) Lenin=252
+        inpname=inpname(1:LenIn)//'.inp'
+      end if
+      call setchval('jobname',jobname)
+c -- determine hostname
+      call blankit(hname,256)
+      call get_hostname(hname)
+      call setchval('hostname',hname)
+      call rmblan(hname,256,nhn)
+c
+c -- write out Copyright notice on the output and log files
+c -- define and open default files; copy input to a second file
+      call firstfil(inpname)
+      call rwinit
+      call date1(datestr)
+      call chartime(timestr)
+      call elapsec(start_job)
+c
+c ......................................................
+c -- check for valid license
+       call getchval('prodstr',prodstr)  ! pqs license
+       license = chklicense(prodstr)
+       call getival('nslv',nslv)
+       if(nslv.gt.license) call toomanyproc(nslv,license)
+c ......................................................
+c
+      ncard=0
+      nscan=0
+      oldcmd='INIT'
+      cputold=zero
+      elaptold=zero
+      gcard=.false.
+      qcard=.false.
+      call setival('isumscf',0)      ! SCF summary print flag
+ 10   continue
+      ncard=ncard+1
+      read(inp,20,end=8000,err=8000) card
+ 20   format(a80)
+      i=0
+ 25   i=i+1
+      if(card(i:i).eq.blank) go to 25
+c
+c -- end simulated while loop
+c -- i is the first non-blank character of the card
+      cmd=card(i:i+3)
+      ifrst=i+5
+      call lowerca2(cmd,4)
+      k=0
+      do 30 i=1,ncmds
+         if (commands(i).eq.'    ') go to 30
+         if (cmd.eq.commands(i)) then
+            k=i
+            go to 40
+         end if
+ 30      continue
+ 40   continue
+      IF (k.le.0) THEN
+        call message(' ','WARNING: unidentified input card: '//cmd,0,0)
+        go to 10
+      ELSE
+        backspace inp
+        if(.not.initial.and.(k.ne.27.and.k.ne.26.and.k.ne.2))go to 2700
+c
+c -- print total and elapsed time
+      call secund(cput)
+      call elapsec(elapt)
+      cputt=(cput-cputold)/60.0d0
+      elaptt=(elapt-elaptold)/60.0d0
+      cputold=cput
+      elaptold=elapt
+      if(elaptt.gt.0.03d0) then
+         write(iout,44)
+         write(iout,45) oldcmd,cputt,elaptt
+         call print_perf(iout,cputt,elaptt)
+         write(iout,46)
+         call f_lush(iout)
+      end if
+  44  format(/72('='))
+  45  format('Program step = ',a4,' Master CPU time = ',f9.2,
+     1   ' Elapsed time = ',f9.2)
+  46  format(72('=')/)
+c
+      oldcmd=cmd
+c
+c  check if a scratch file has been defined before doing anything
+c  substantial
+      if(k.gt.5.and.k.ne.26.and.k.ne.27) then
+        call CheckScratch
+      end if
+c Follow the route given in the input
+c
+c              titl file cpu  text calc geom basi inte gues scf
+        go to ( 100, 200, 300, 400, 500, 600, 700, 800, 900,1000,
+c              forc intc freq nbo  pop  pop= semi opti mass nmr
+     1         1100,1200,1300,1400,1500,1500,1700,1800,1900,2000,
+c              lmp2 numh rest nucl mp2  mem  %mem jump clea stop
+     2         2100,2200,2300, 600,2500,2600,2600,2800,5000,8000,
+c              hess dyna anfc corr ffld prop scan path qmmm nump
+     3         3100,3200,1600,3300,3400,3500,3600,3700,3800,3900,
+c              pola cosm nume numg scfd numc sqm  oldc      cim
+     4         3950,4000,4100,4150,4200,4250,4300,4400,4500,4600,
+c              cims
+     5         4700,10  ),k
+c
+c -- define title
+ 100  read(inp,120,end=140) title
+ 120  format(a80)
+ 140  call setchval('titl',title)
+      go to 10
+c
+c -- define files
+ 200  continue
+      call readfnam(inp)
+      call fileopen
+      go to 10
+c
+ 300  continue
+      call cpuparm(inp)
+      go to 10
+c
+ 400  continue
+      read(inp,120,end=440) text
+      call message(' ',text,0,0)
+ 440  go to 10
+c
+ 500  continue
+c -- begin a new calculation - needed if the basis or the method changes
+c -- general job parameters
+      call jobparam(inp)
+      call matreset
+      go to 10
+c
+c ---------------------------------------------
+ 600  continue
+c -- read in nuclear info; determine symmetry
+        qcard=.true.
+ 601    call nuclrea(inp,qcard)
+        call getmem(0,lastx)
+        call retmem(1)
+        call GEOMETRY(lcore-lastx,bl(lastx),natoms,ndum)
+        call postgeom(natoms,natoms-ndum,bl(lastx),bl(lastx+9),
+     $                bl(lastx+9+7*natoms))
+        basread = .FALSE.
+c ..............................................................
+c -- Test on number of atoms
+        If(natoms.gt.maxnuc.and.license.lt.1)
+     $       call stopmsg(maxnuc,maxbas)
+        If(natoms.lt.maxnuc.and.license.lt.1.and.nwarn.eq.0)
+     $       call warnmsg(maxnuc,maxbas)
+        If(natoms.lt.maxnuc.and.license.lt.1) nwarn=nwarn+1
+c ..............................................................
+      go to 10
+c ---------------------------------------------
+c
+ 700  continue
+c -- read in basis set info; generate symmetry info for basis functions
+c -- since this is always a new calc., reset the matrix system
+      call matreset
+c ****************************************************************
+c -- WARNING! <symfunc> call fixes unknown bug!!    ! JB Nov 2005
+      If(basread) call symfunc(.true.)
+c ****************************************************************
+      call basrea(inp)
+c ..............................................................
+c -- Test on number of basis functions
+        ncf = igetival('ncf')
+        If(ncf.gt.maxbas.and.license.lt.1)
+     $      call stopmsg(maxnuc,maxbas)
+        If(ncf.lt.maxbas.and.license.lt.1.and.nwarn.eq.0)
+     $      call warnmsg(maxnuc,maxbas)
+        If(ncf.lt.maxbas.and.license.lt.1) nwarn=nwarn+1
+c ..............................................................
+      basread = .TRUE.
+      go to 10
+c
+ 800  continue
+c -- this is only the reading of options for the integrals
+      call integop(inp)
+      go to 10
+c
+c ----------------------------------------------
+ 900  continue
+c -- MO guess
+        call getmem(0,lastx)
+        call retmem(1)
+        gcard=.true.
+        call preguess(inp,gcard)
+        call GUESS(lcore-lastx,bl(lastx),natoms)
+      go to 10
+c ----------------------------------------------
+c
+ 1000 continue
+c -- SCF step
+      if(.not.gcard) then
+        call getmem(0,lastx)
+        call retmem(1)
+        call preguess(inp,gcard)
+        call GUESS(lcore-lastx,bl(lastx),natoms)
+      end if
+      call scfmain(inp)
+      gcard=.false.
+      go to 10
+c
+ 1100 continue
+      if(ierrflag(1).gt.0) then
+        call message('DRIVER calling FORCE Module',
+     $ 'incomplete SCF convergence in the preceding SCF step',0,0)
+        go to 8000
+      else
+        call forces
+      end if
+      go to 10
+c
+ 1200 continue
+c ----------------------------------------------
+ 1300 continue
+c -- frequency and thermodynamic analysis
+      call getmem(0,lastx)
+      call retmem(1)
+      call prefreq(inp)
+      call FREQ(lcore-lastx,bl(lastx))
+      go to 10
+c ----------------------------------------------
+ 1400 continue
+c -- NBO analysis
+#ifdef TRIAL
+      read (inp,*)
+      call message(' ','** NBO Disabled in Trial Version **',0,0)
+#else
+      call runnbo(inp)
+#endif
+      go to 10
+c ----------------------------------------------
+ 1500 continue
+c -- population analysis
+      call getmem(0,lastx)
+      call retmem(1)
+      call prepop(inp)
+      call POPML(lcore-lastx,bl(lastx))
+      go to 10
+c ----------------------------------------------
+ 1600 continue
+c ----------------------------------------------
+ 1700 continue
+c -- SEMIEMPIRICAL energy + gradient
+        call getmem(0,lastx)
+        call retmem(1)
+        call presemi(inp)
+        call SEMIEMP(inp,lcore-lastx,bl(lastx),natoms-ndum)
+      go to 10
+c ----------------------------------------------
+ 1800 continue
+c -- geometry optimization
+c
+c try to prevent silly runs (optimizing an atom)
+      if(natoms-ndum.le.1)then
+        read(inp,*)
+        if(optcyc.eq.0)then
+          call message('WARNING: there is only one atom in the system!',
+     $                 'Skipping the geometry optimization step',0,0) 
+          optcyc = optcyc + 1
+        else
+          optcyc = 0
+          call jumpf(inp)
+        endif
+        goto 10
+      endif
+c
+      call getmem(0,lastx)
+      call retmem(1)
+      call preopt(inp,optcyc,natoms-ndum)
+      if(optcyc.eq.1) call summary(-2,bl(lastx))
+      call OPTGEOM(lcore-lastx,bl(lastx),cnvgd)
+      optcyc = optcyc+1
+      If(cnvgd) Then
+       call summary(optcyc,bl(lastx))
+       optcyc = 0
+       ffcyc = 0
+       qcyc = 0
+       call jumpf(inp)
+      EndIf
+      go to 10
+c ----------------------------------------------
+c
+ 1900 continue
+ 2000 continue
+c -- nmr shift
+      call mmark
+      call chshift
+      call retmark
+      go to 10
+c
+ 2100 continue
+c -- Local MP2
+      call mmark
+      call newtransloc
+ckw   call mpmain
+      call retmark
+      go to 10
+c
+c ----------------------------------------------
+ 2200 continue
+c -- numerical hessian
+      call getmem(0,lastx)
+      call retmem(1)
+      call prenumH(inp)
+      call HESSNUM(lcore-lastx,bl(lastx),cnvgd)
+      If(cnvgd) call jumpf(inp)
+      go to 10
+c ----------------------------------------------
+c
+ 2300 continue
+      read(inp,*)
+c -- restart scratch files (i.e. re-generate their table of content)
+      call restart(1,0)
+      call restart(4,0)
+      go to 10
+c
+ 2400 continue
+ 2500 continue
+      call para_cmp2
+      go to 10
+c
+ 2600 continue
+c -- read requested memory, incore and disk storage in MWords or Words
+#ifdef TRIAL
+      read (inp,*)
+      call message(' ','** Memory Options Disabled in Trial Version **',
+     $             0,0)
+#else
+      call readmem(inp,lcore,incore,indisk)
+#endif
+c
+      go to 10
+ 2700 continue
+c
+c  tell the slaves how much memory and integral storage to use
+c  this has to be before allocmem changes the meaning of lcore
+c  present formula is that the slave gets everything
+c
+      lslv=incore+lcore
+      call para_mem(lslv,incore,indisk)
+c -- allocate memory and initialize floating-point and integer storage
+      call allocmem(lcore,ioffset)
+      call setival('lcore',lcore)
+      call setival('incore',incore)
+      call setival('indisk',indisk)
+      call setival('ioffset',ioffset)
+c -- reserve the integral storage area
+      if(incore.ne.0) then
+        call getmem(incore,incorex)
+        call setival('incorex',incorex)
+      endif
+      initial=.true.   ! slave initialization is done
+      go to 10
+c
+ 2800 continue
+c -- jump back for iterative loop (e.g. optimization)
+      call jumpb(inp)
+      go to 10
+c
+ 3100 continue
+c -- analytical hessian
+      call mmark
+      call hessana
+      call retmark
+      go to 10
+ 3200 continue
+c -- DYNAmics option  dyncyc (integer) is the dynamics cycle number
+      call dynamain(dyncyc,cnvgd,natoms-ndum)
+      dyncyc = dyncyc+1
+      If(cnvgd) Then
+        write(iout,3210) dyncyc
+        write(icond,3210) dyncyc
+ 3210   format('Molecular dynamics run finished after',i8,' timesteps')
+        dyncyc = 0
+        call jumpf(inp)
+      EndIf
+      go to 10
+ 3300 continue
+c -- Post Hartree-Fock energies
+      call coupled_cluster
+      go to 10
+c ----------------------------------------------
+ 3400 continue
+c -- force field
+      If(qcyc.EQ.1) ffcyc=0
+      call getmem(0,lastx)
+      call retmem(1)
+      call preff(inp,ffcyc)
+      call FFIELD(ffcyc,lcore-lastx,bl(lastx))
+      go to 10
+c ----------------------------------------------
+ 3500 continue
+c -- properties
+      call getmem(0,lastx)
+      call retmem(1)
+      call preprop(inp)
+      call PROPERTY(lcore-lastx,bl(lastx))
+      go to 10
+c ----------------------------------------------
+ 3600 continue
+c -- potential scan
+      call getmem(0,lastx)
+      call retmem(1)
+      call prescan(inp,nline)
+      call PSCAN(inp,lcore-lastx,bl(lastx),cnvgd,natoms-ndum)
+      If(cnvgd) Then
+        nline = 0
+        call jumpf(inp)
+      EndIf
+      go to 10
+c ----------------------------------------------
+ 3700 continue
+c -- reaction path
+      call getmem(0,lastx)
+      call retmem(1)
+      call prepath(inp,scyc)
+      call PATH(lcore-lastx,bl(lastx),back,cnvgd)
+      scyc = scyc+1
+      If(cnvgd) Then
+        scyc = 0
+        call jumpf(inp)
+      Else if(back) Then
+        call jumpc(inp,'path')
+      EndIf
+      go to 10
+c ----------------------------------------------
+ 3800 continue
+c -- qm/mm
+      call getmem(0,lastx)
+      call retmem(1)
+      call preqmmm(inp,qcyc)
+      call QMMM(lcore-lastx,bl(lastx),iqmm)
+      qcyc = qcyc+1
+      If(iqmm.eq.2) go to 10
+c -- geometry has been changed (FULL/MODEL)
+      qcard=.false.
+      go to 601
+c ----------------------------------------------
+ 3900 continue
+c -- polarizability derivatives (numerical)
+      call getmem(0,lastx)
+      call retmem(1)
+      call prepol(inp)
+      call POLNUM(lcore-lastx,bl(lastx),cnvgd)
+      If(cnvgd) call jumpf(inp)
+      go to 10
+c ----------------------------------------------
+ 3950 continue
+c -- polarizabilities (analytical)
+      call mmark
+      call polariz
+      call retmark
+      go to 10
+c ----------------------------------------------
+ 4000 continue
+c -- cosmo option - initialize cosmo parameters
+      call cosmo_init(jobname,lenj)
+      go to 10
+c ----------------------------------------------
+ 4100 continue
+c -- numerical dipole moment & polarizability
+c    (1st and 2nd energy derivatives wrt el.field)
+      call edernum(inp,cnvgd)
+      if(cnvgd) call jumpf(inp)
+      go to 10
+c ----------------------------------------------
+ 4150 continue
+c -- numerical gradient
+      call getmem(0,lastx)
+      call retmem(1)
+      call prenumG(inp)
+      call GRADNUM(lcore-lastx,bl(lastx),cnvgd)
+      If(cnvgd) call jumpf(inp)
+      go to 10
+c ----------------------------------------------
+ 4200 continue
+c -- dual basis set scf
+      call dualscf
+      go to 10
+c ----------------------------------------------
+ 4250 continue
+c -- numerical CPHF solver for electric field perturbation
+      call cphfnum(inp,cnvgd)
+      if(cnvgd) call jumpf(inp)
+      go to 10
+c ----------------------------------------------
+ 4300 continue
+c -- sqm scaling (prior to frequency analysis)
+      call getmem(0,lastx)
+      call retmem(1)
+      call SQM_PQS(inp,lcore-lastx,bl(lastx))
+      go to 10
+c ----------------------------------------------
+ 4400 continue
+      read(inp,20)
+c -- use the old elementary constants (1997 vs. 2006)
+      call message('','WARNING: Old (1997) physical constants are used',
+     1  0,0)
+      call setdata
+      call setconst
+      go to 10
+c ----------------------------------------------
+ 4500 continue
+c -- geometry optimization by a new program
+c
+c try to prevent silly runs (optimizing an atom)
+      if(natoms-ndum.le.1)then
+        read(inp,*)
+        if(optcyc.eq.0)then
+          call message('WARNING: there is only one atom in the system!',
+     $                 'Skipping the geometry optimization step',0,0) 
+          optcyc = optcyc + 1
+        else
+          optcyc = 0
+          call jumpf(inp)
+        endif
+        goto 10
+      endif
+      call getmem(0,lastx)
+      call retmem(1)
+CPP  comment it out for the time
+c      call opt2(inp,optcyc,cnvgd)
+      optcyc = optcyc+1
+      If(cnvgd) Then
+c?       call summary(optcyc,bl(lastx))
+       optcyc = 0
+       ffcyc = 0
+       qcyc = 0
+       call jumpf(inp)
+      EndIf
+      go to 10
+c ----------------------------------------------
+C -- Add by NZG for Cluster-in-molecule calculation!
+ 4600 continue
+c -- generate CIM clusters' input files
+      call para_cimsubgen(nclu)
+      go to 10
+C ----------------------------------------------
+ 4700 continue
+C -- calculate correlation energy CIM cluster
+      call para_cimsub
+      optcyc=-1  !Avoid rdcntrl for escf in call summary
+      go to 10
+C -- End CIM part
+c ----------------------------------------------
+ 5000 continue
+c -- cleanup old optimization files
+      call cleanup(inp,optcyc)
+      go to 10
+c ----------------------------------------------
+      END IF
+ 8000 continue
+c
+c -- job summary (if single point)
+      If(optcyc.eq.0) Then
+        call summary(-2,xjnk)
+        If(ierrflag(1).eq.1) Then
+          call summary(-1,xjnk)
+        Else
+          call summary(0,xjnk)
+        EndIf
+      EndIf
+c--------------------------------------------------------------------
+      call secund(cput)
+      call elapsec(elapt)
+      cputt=(cput-cputold)/60.0d0
+      elaptt=(elapt-elaptold)/60.0d0
+      cputold=cput
+      elaptold=elapt
+      if(elaptt.gt.0.03d0) then
+         write(iout,44)
+         write(iout,45) oldcmd,cputt,elaptt
+         call print_perf(iout,cputt,elaptt)
+         write(iout,46)
+      end if
+      call elapsec(end_job)
+      tot_job=(end_job - start_job)/60.d0
+      call secund(cputot)
+      cputot=cputot/60.0d0
+c--------------------------------------------------------------------
+      call date1(datestr)
+      call chartime(timestr)
+      call memstat(nreq,nmark,lastadr,memtot,mxmem,ioffset)
+      write(iout,8500)
+      write(icond,8500)
+      write(iout,8400) nreq,nmark,mxmem,memtot
+      write(iout ,8700) cputot,tot_job
+      write(icond,8700) cputot,tot_job
+      call getival('nslv',nslv)
+      if(nslv.gt.0) then
+         call getrval('cpuscum',cpuscum)
+         effic=(cputot+cpuscum)/tot_job
+         write(iout,8750) cputot+cpuscum,effic,nslv
+      end if
+      write(iout,9000) timestr
+      write(icond,9000) timestr
+      write(iout,9500)
+      write(icond,9500)
+ 8400 format('Memory status:',/,
+     *'request number=',i4,' memory marks=',i3,/,
+     *'high water=',i15,' total available memory=',i15)
+ 8500 format(72('='))
+ 8700 format('Total master CPU time = ',f9.2,' Elapsed = ',
+     *       f9.2,' min')
+ 8750 format('       Total CPU time = ',f9.2,
+     *       ' Efficiency = ',f7.3,' on ',i3,' processors')
+ 9000 format('Termination on ',a24)
+ 9500 format(72('=')/)
+c--------------------------------------------------------------------
+      end
+c===================================================================
+      subroutine stopmsg(maxnuc,maxbas)
+c
+      iout=igetival('iout')
+      write(iout,'(67(''*''))')
+      write(iout,'(1x,a,a,i0,a)') ' Job dimensions exceed the limits ',
+     $         'of the free version (',maxnuc,' atoms'
+      write(iout,'(1x,a,i0,a,a)') ' and ',maxbas,' basis functions), ',
+     $      'but no valid license file was found.'
+      write(iout,*) ' To upgrade to the full version, please run',
+     $              ' the command '
+      write(iout,*) ' ''pqs -lockcode'' and submit the lock code file ',
+     $              'pqs_lockcode '
+      write(iout,*) ' to licenses@pqs-chem.com'
+      write(iout,'(67(''*''))')
+c
+      call nerror(1,'stopmsg','No license found',0,0)
+      end
+c===================================================================
+      subroutine warnmsg(maxnuc,maxbas)
+      use messages
+      character*256 line
+c
+      iout=igetival('iout')
+      wbuf=''
+      write(line,'(67(''*''))')
+      call addbuf(line)
+      write(line,*) ' You are using a free version of the PQS',
+     $              ' quantum chemistry suite.'
+      call addbuf(line)
+      write(line,'(1x,a,i0,a,i0,a)') ' This version is limited to ',
+     $           maxnuc,' atoms and ',maxbas,' basis functions.'
+      call addbuf(line)
+      write(line,*) ' To upgrade to the full version, please run',
+     $              ' the command '
+      call addbuf(line)
+      write(line,*) ' ''pqs -lockcode'' and submit the lock code file ',
+     $              'pqs_lockcode '
+      call addbuf(line)
+      write(line,*) ' to licenses@pqs-chem.com'
+      call addbuf(line)
+      write(line,'(67(''*''))')
+      call addbuf(line)
+#ifdef WINDOWS
+#ifdef  __INTEL_COMPILER
+      write(line,*)
+      call addbuf(line)
+      write(line,*)' Press the OK button to continue the calculation'
+      call addbuf(line)
+      write(line,*)
+      call addbuf(line)
+#endif
+#endif
+      call display_buf(iout,'PQS Warning:')
+c
+      return
+      end
+c===================================================================
+      subroutine toomanyproc(nproc,maxproc)
+      integer nproc,iout
+      integer*4 maxproc
+c
+      iout=igetival('iout')
+      write(iout,'(67(''*''))')
+      write(iout,'(1x,a,a,i0)') ' The number of processors requested ',
+     $         'by the current job: ',nproc
+      write(iout,'(1x,a,a,i0)') ' exceeds the maximum number ',
+     $         'allowed by the PQS license: ',maxproc
+      write(iout,'(67(''*''))')
+c
+      call nerror(1,'stopmsg','Too many processors',nproc,maxproc)
+      end

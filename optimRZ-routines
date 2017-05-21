@@ -1,0 +1,50 @@
+      SUBROUTINE RdCnnct(NAtoms,NCnnct,MaxC,IPRNT,IAC,IC)
+      SUBROUTINE RdCON(MaxCON, ICons,  NCons,  NComp,  NPComp,
+      SUBROUTINE RdDRIVE(NDrive, IDRTYP, IDRIVE, FDRIVE)
+      SUBROUTINE RdDUM(NDum,MaxL,IFunc)
+      SUBROUTINE RdFIX(NAtoms,NFix,IFix)
+      SUBROUTINE RdHESS(HFile,Len,NDim,IPRNT,HESS,IHflag)
+      SUBROUTINE RdHPRIM(NDim,HESS,NCol,ICNUM)
+      SUBROUTINE RdOPT0(IOptC,  IGen,   IType,  NFix,   NDum,
+      SUBROUTINE RdOPT1(IOP)
+      SUBROUTINE RdSurf(NAtoms,NMol,IMOL,IPRNT,NFix,IFIX)
+      SUBROUTINE RedTOPG(NIC,NVar,IG,GINT,ITMP,GVAR)
+      SUBROUTINE RedTOPX(NIC,NVar,IG,ZINT,XINT)
+      SUBROUTINE ReOrderZ(NZ,INDX,XZ,XC)
+      SUBROUTINE rij2cart( n,  nrij,  rijindx, rijlst, M,
+c     .. External Subroutines ..
+      SUBROUTINE RmFIX(N1,     IFIX,   GOld,   HOld,   Gflag,
+      SUBROUTINE RotHES(NAtoms,RM,SCR,HESS)
+      SUBROUTINE RotVEC(NAtoms,RM,V)
+      SUBROUTINE RstFIX(NAtoms, NDum,   NDim,   IFix,   DOld,
+      SUBROUTINE S2Bend(I,J,K,L,XC,SS)
+      SUBROUTINE S_BTRAN(NAtoms, XC,     NPrim,  ktyp,   klist,
+      SUBROUTINE S_CONJUGATE(NAT3,   N,      Nb,     NB1,    INB1,
+      SUBROUTINE S_DefHES(NDEG,   intcor, NCon,   ktyp,   klist,
+      SUBROUTINE S_GrdINT2(NAT3,   N,      gcart,  IPRNT,  Nb,
+      SUBROUTINE S_GrdINT3(NAT3,   N,      gcart,  IPRNT,  Nb,
+      SUBROUTINE S_TranINT(NPrim,  NDEG,   XPrim,  NCmp,   NP1,
+      SUBROUTINE SCHMIDT(NDEG,   intcor, NCons,  VC,     thrsh,
+      SUBROUTINE SortBEND(int0,klist,nc,mc)
+      SUBROUTINE SortINT(NPrim0, NPrim1, ktyp1,  klist1, NPrim2,
+      SUBROUTINE SortOUTP(int0,klist,nc,mc)
+      SUBROUTINE SortPRIM(NPrim,  ktyp,   klist)
+      SUBROUTINE SortSTRE(int0,klist,nc,mc)
+      SUBROUTINE SortTORS(int0,klist,nc,mc)
+      SUBROUTINE SurfCNNCT(NAtoms, NMol,   IMOL,   XC,     NIC,
+      SUBROUTINE SurfINT(NAtoms, NMol,   IMOL,   XC,     PThrsh,
+      SUBROUTINE SymCON(NAtoms, NCons,  ICTYP,  RCON,   IC,
+      SUBROUTINE SymDRIVE(NAtoms, NDrive, IDRTYP,  FDRIVE, IDRIVE,
+      SUBROUTINE SymFIX(NAtoms,IFix,NTrans,NEqATM)
+      SUBROUTINE SymHES(NAtoms, NTrans, NEqATM, TRANS,  HOld,
+      SUBROUTINE SymNIC(intcor, NVib,   NDEG,   NAT3,   thrsh,
+      SUBROUTINE SymPRIM(NPrim,IG,XPrim)
+      SUBROUTINE TidyUP(NDEG,   intcor, thrsh,  IPRNT,  UTT,
+      SUBROUTINE TOPOLOGY(NAtoms, NMol,   IMOL,   ITors,  NIC,
+      SUBROUTINE Tor2ZN(NAtoms, NPrim,  IGen,   ktyp,   klist,
+      SUBROUTINE TranBM(NAtoms,intcor,NDEG,UT,B,VM)
+      SUBROUTINE TranINT(intcor,NDEG,ZINT,UT,XINT)
+      SUBROUTINE TrnHPRIM(NDEG,NPrim,HPRIM,UT,VV,HINT)
+      SUBROUTINE UpdHES(N,      IUpDat, IPRNT,  D,      G,
+      SUBROUTINE UTPrim(NDEG,   NPrim,  NPrim1, GOld,   DINT,
+      SUBROUTINE ZeroFIX(NAT3,IFix,GC,D,HESS)

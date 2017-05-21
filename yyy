@@ -1,0 +1,3 @@
+CPP
+          call print_atomic_numbers(natom,iout,bl(ian1))
+CPP
