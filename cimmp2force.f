@@ -1598,7 +1598,11 @@ C NZG_5/16/2017 @UARK
       integer ncen,nval,i,j
       real*8 Tmnmo(nval,nval),Tlq(ncen,nval),tran(nval,nval)
 
-      
+      Tlq=0.0D0
+      call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+     &           nval,Tmnmo,nval,0.0D0,Tlq,ncen)
+
+      end subroutine TQtoL     
     
 
 
