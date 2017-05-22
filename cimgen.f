@@ -1020,6 +1020,7 @@ C ===========================================
          inpname=trim(cluname)//'.inp'
          infname=trim(cluname)//'.cim'
          mosname=trim(cluname)//'.mos'
+         if (calforce2) cenname=trim(cluname)//'.cen'
          lenM=k2-k1+5
          call NJ_trim(inpname,k1,k2)
          inpclu=123+i

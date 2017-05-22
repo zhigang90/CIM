@@ -1476,12 +1476,9 @@ C  First, transform one of the occupied indices from QCMO to LMO
                   allocate(Tlq(ncen,nval))
                   call TQtoL(Tmnmo,Tlq,trans,ncen,nval)
 
-C                  call BackTrans_CIM(Tmnao,ncf,nval,ipr,jpr,
-C     2                           bl(ipoint),bl(jpoint),bl(iocca))
-C
-C NZG
-                  call matzero('TAO')
-C NZG
+                  call BackTrans_CIM(Tlq,Tmnao,ncf,nval,ncen,Ccen,
+     &                               bl(iocca))
+
                   call secund(ttbt2)
                   ttbt=ttbt+ttbt2-ttbt1
 CC
@@ -1595,7 +1592,7 @@ C NZG_5/16/2017 @UARK
       use memory
       implicit none
 
-      integer ncen,nval,i,j
+      integer ncen,nval
       real*8 Tmnmo(nval,nval),Tlq(ncen,nval),tran(nval,nval)
 
       Tlq=0.0D0
@@ -1605,11 +1602,23 @@ C NZG_5/16/2017 @UARK
       end subroutine TQtoL     
     
 
+C =====================================================================
+      subroutine BackTrans_CIM(Tlq,Tmnao,ncf,nval,ncen,Ccen,Cqcmo)
+ 
+      use memory
+      implicit none
 
+      integer ncf,nval,ncen
+      real*8 Tlq(ncen,nval),Tmnao(ncf,ncf)
+      real*8 Ccen(ncf,ncen),Cqcmo(ncf,nval),CqcmoT(nval,ncf)
+      real*8 temp(ncen,ncf)
+
+      CqcmoT=transpose(Cqcmo)
+      call matmul_mkl(Tlq,CqcmoT,temp,ncen,nval,ncf)
+      call matmul_mkl(Ccen,temp,Tmnao,ncf,ncen,ncf)
+
+      end subroutine BackTrans_CIM
 
 
 
       
-C
-C
-C      end subroutine TQtoL
