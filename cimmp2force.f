@@ -4,7 +4,8 @@ C * Modify the source code of force2_MP2 from PQS        *
 C * Zhigang 3/23/2017 @UARK                              *
 C ********************************************************
 
-      subroutine force2_MP2_CIM(natom,nmo,nvirt,rhf,ictr,iprnt,trans)
+      subroutine force2_MP2_CIM(natom,nmo,nvirt,ncen,
+     &                          rhf,ictr,iprnt,trans)
 C    interface for cim-mp2-gradients
 C    this subroutine is called from cim_mp2 if force is to be calculated.
 C    the MP2 correction to the gradient is calculated and added to the
@@ -33,7 +34,7 @@ c
       dimension trans(nmo,nmo)
       integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
-      real*8,allocatable::tmp(:),SOVER(:,:)
+      real*8,allocatable::tmp(:),SOVER(:,:),Ccen(:,:),Ccen1(:,:)
       character*8,allocatable::AtSymb(:)
 
 C For test
@@ -120,7 +121,26 @@ C      allocate(SOVER2(ncf,ncf))
 C      call ReorderFock2(ncf,ncf,Z(1),Fock1,SOVER2)
 
       call ReorderFock3(ncf,Z(1),Fock1,bl(lfock0))
-      deallocate(dtmp,Fock1)
+
+C Read the coefficients of central orbitals (LMO) and reorder to KW
+C order. -NZG_5/22/2017 @UARK
+      allocate(Ccen1(ncf,ncen),Ccen(ncf,ncen),tmp(ncen))
+
+      itype=1
+      lenM=lenJ+4
+      call ReadMOS(ncf,Ccen1,tmp,.false.,lenM,jobname(1:lenJ)//'.cen',
+     &             itype,IErr)
+      If (IErr.NE.0) call nerror(3,'CIM Cluster Force Module',
+     &   'MOS File Does Not Exist',0,0)
+
+      do J=1,ncen
+         do I=1,ncf
+            II=Z(I)
+            Ccen(I,J)=Ccen1(II,J)
+         enddo
+      enddo
+
+      deallocate(dtmp,Fock1,tmp,Ccen1)
            
       call matdef('ovla','s',ncf,ncf)
       lovla=mataddr('ovla')
@@ -128,7 +148,6 @@ C      call ReorderFock2(ncf,ncf,Z(1),Fock1,SOVER2)
       call inton2(0,natom,SOVER,INX2,INX2,0,0,BASDAT,BASDAT,XC,
      &            IAN,ncs,ncs,ncf,ncf,tmp)
        
-
       call ReorderFock3(ncf,Z(1),SOVER,bl(lovla))
       deallocate(tmp,Z)
 
@@ -191,7 +210,7 @@ C zero-out the two-electron contributions to the force
       call zeroit(bl(lforc2),natom*3)
 
       call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
-     &                  bl(lforc2),ncore,trans)
+     &                  bl(lforc2),ncore,trans,Ccen,ncen)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -224,7 +243,8 @@ c ...........................................................
 
 C ====================================================================== 
       subroutine mp2_grad_cim(ncf,    nval,   nvir,   iprint, thresh,
-     1                        nmo,    natoms, gradv,  ncore,  trans)
+     1                        nmo,    natoms, gradv,  ncore,  trans,
+     2                        Ccen,   ncen)
 C
 C  Main routine for CIM-MP2-gradients. 
 C  In CIM we don't release memory after energy calculation. Some of the
@@ -266,7 +286,7 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*),trans(nmo,nmo)
+      dimension gradv(3,*),trans(nmo,nmo),Ccen(ncf,ncen)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
@@ -702,7 +722,7 @@ C
       call getival('SymFunPr',ifp)
       call Rphas2_CIM(ncf,nval,ndisk3,nbins,lbin,thresh,bl(ibin),bl(i1),
      1                bl(itmo),bl(itao),nsym,iprint,bl(ictr),nrcpb,
-     2                bl(ifp),gradv,iscs,natoms,trans)
+     2                bl(ifp),gradv,iscs,natoms,trans,ncen,Ccen)
       call symmon
 C
       call retmem(2)
@@ -730,6 +750,9 @@ cc
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque(NAtoms,0,bl(inuc),gradv )
       endif
+
+
+      stop
 C
 C  build gradient vector
 C
@@ -1271,7 +1294,7 @@ c
 C========Rphas2_CIM===================================================
       subroutine Rphas2_CIM(ncf,nval,ndisk3,nbins,lbin,thresh,ibin,int1,
      &                      Tmnmo,Tmnao,nsym,iprint,inx,nrcpb,ifunpair,
-     &                      gradv,iscs,natom,trans)
+     &                      gradv,iscs,natom,trans,ncen,Ccen)
 
       use memory
 
@@ -1318,7 +1341,7 @@ c     calculation, we need to transform the T from QCMO to LMO.
       integer*1 int1(2,lbin)
       integer*4 ibin(2,lbin)
       character*11 scftype
-      dimension Tmnao(ncf,ncf),Tmnmo(nval,*),trans(nval,nval)
+      dimension Tmnao(ncf,ncf),Tmnmo(nval,*),trans(nval,*),Ccen(ncf,*)
       dimension ifunpair(7,*)
       dimension gradv(3,*)
       dimension inx(12,*)
@@ -1326,6 +1349,7 @@ c     calculation, we need to transform the T from QCMO to LMO.
       parameter(zero=0.0d0,half=0.5d0,two=2.0d0,four=4.0d0)
       parameter (dblmax=2147483648.0d0)
 C
+      real*8,allocatable::Tlq(:,:)
       call secund(trphas2_b)
       call elapsec(erphas2_b)
 C
@@ -1475,16 +1499,18 @@ C  backtransform this matrix to AO basis
 C  First, transform one of the occupied indices from QCMO to LMO
                   allocate(Tlq(ncen,nval))
                   call TQtoL(Tmnmo,Tlq,trans,ncen,nval)
-
                   call BackTrans_CIM(Tlq,Tmnao,ncf,nval,ncen,Ccen,
      &                               bl(iocca))
-
+                  deallocate(Tlq)
                   call secund(ttbt2)
                   ttbt=ttbt+ttbt2-ttbt1
 CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
+                  call matzero('denf')
+                  call matzero('ddtf')
+
                   call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
@@ -1593,7 +1619,7 @@ C NZG_5/16/2017 @UARK
       implicit none
 
       integer ncen,nval
-      real*8 Tmnmo(nval,nval),Tlq(ncen,nval),tran(nval,nval)
+      real*8 Tmnmo(nval,nval),Tlq(ncen,nval),trans(nval,nval)
 
       Tlq=0.0D0
       call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
@@ -1614,7 +1640,9 @@ C =====================================================================
       real*8 temp(ncen,ncf)
 
       CqcmoT=transpose(Cqcmo)
+      temp=0.0D0
       call matmul_mkl(Tlq,CqcmoT,temp,ncen,nval,ncf)
+      Tmnao=0.0D0
       call matmul_mkl(Ccen,temp,Tmnao,ncf,ncen,ncf)
 
       end subroutine BackTrans_CIM

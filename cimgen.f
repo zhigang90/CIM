@@ -141,7 +141,7 @@ C      character*4::ENTYP
       character*8 submtd,highmtd
       character*7 methods(5)
       character*256 chopv(nopt),jobname,MOS,MOB,cluname,inpname
-      character*256 infname,mosname,act_str,high_str
+      character*256 infname,mosname,cenname,act_str,high_str
       character line*100
       dimension iopv(3,nopt),ropv(3,nopt),ifound(nopt)
       integer,allocatable::IAN(:),natc(:),nath(:),link(:,:),link2(:,:)
@@ -1106,6 +1106,11 @@ C -- Write MO coefficients and orbital energies to XXX.mos file
          if (motype=='lmo ') MOS2=MO_clu
          itype=1
          call WriteMOS(JF,NA,MOS2,FHH,.true.,lenM,mosname,itype)
+
+C If force is to be calculated, the coefficients of central orbitals are
+C needed. -NZG_5/22/2017 @UARK
+         if (calforce2) call WriteMOS(JF,ncen,MO_clu(1:JF,1:ncen),FHH,
+     &                                .false.,lenM,cenname,itype)
 
          deallocate(MOS2,FHH,MO_clu)
          call elapsec(tvir2)

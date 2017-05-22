@@ -1095,8 +1095,8 @@ c---------------------------------------------------------------------
 c -- Entering MP2 gradient calculation module for CIM cluster
 c -- Zhigang 3/23/2017 @UARK
 
-      if (.not.emp2only) call force2_MP2_CIM(natoms,nmo,nvirt,.true.,
-     &                                       ictr,iprnt,trans)
+      if (.not.emp2only) call force2_MP2_CIM(natoms,nmo,nvirt,ncen,
+     &                                       .true.,ictr,iprnt,trans)
 
       call retmem(5)
       call matremark
