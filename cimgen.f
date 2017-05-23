@@ -410,7 +410,6 @@ C      allocate(SMOBW(nbas,nbeta),SMOBT(nbeta,nbas),SMOB(nbas,nbeta))
       allocate(SMO(nbas,nmo),eorb(nmo))
       itype=1
       CALL ReadMOS(NBas,SMOAW,eorb,.False.,lenM,MOS(1:lenM),itype,ierr)
-      write(6,*) SMOAW
       If (ierr.NE.0) call nerror(1,'MOS File Does Not Exist',0,0)
 C      If (NBeta.GT.0) Then
 C         CALL ReadMOS(NBas,SMOBW,eorb(nalpha+1:nocc),
@@ -1068,6 +1067,9 @@ C- Print out some important information in XXX.cim file
          write(inpclu,*) '$END' 
 C
          call iwrit8(inpclu,'$MO-OCC',KB,ML(1,i))
+
+         if (calforce2) call iwrit8(inpclu,'$ATOMS',natm_clu(i),
+     &                              BA(1:natm_clu(i),i))
 C         
 C         allocate(CenMO(KB))
 C         CenMO(1:ncenorb(i))=1       !Central MOs labeled as 1
@@ -1121,7 +1123,7 @@ C needed. -NZG_5/22/2017 @UARK
       write(iout,'(11x,"FINAL CIM DOMAIN SUMMARY")')
       write(iout,'(11x,26(''-''))')
       write(iout,*) 
-     & ' Clu_INDX  Natom   Nbas     Nocc     Nvir   Method  Elap_time'
+     & ' Clu_INDX  Natom   Nbas     Nocc    Nvir   Method  Elap_time'
       flush(iout)
       do i=1,nclu
          write(iout,'(i7,1x,4i8,5x,a8,f8.2)') i,natm_clu(i),nb_clu(i),

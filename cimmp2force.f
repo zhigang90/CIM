@@ -32,6 +32,7 @@ c
       parameter (idft=0)
 
       dimension trans(nmo,nmo)
+      integer iatom(natom)
       integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
       real*8,allocatable::tmp(:),SOVER(:,:),Ccen(:,:),Ccen1(:,:)
@@ -40,6 +41,12 @@ c
 C For test
       real*8,allocatable::Sij(:,:),SOVER2(:,:)
       integer same
+
+C Arguments
+C ---------
+
+C iatom(natom): Corespondence between atoms in the cluster and in the
+C               whole system
 
       write(iout,*)
  10   format(72('='))
@@ -81,6 +88,7 @@ C  Fock matrix should be read from the XXX.cim file
       LF2=ncf*(ncf+1)/2
       allocate(dtmp(LF2),Fock1(ncf,ncf))
       call rread8(iunit,'$AO-FOCK-A',LF2,dtmp(1))
+      call iread8(iunit,'$ATOMS',natom,iatom(1))
       call FockFull(ncf,LF2,dtmp,Fock1)
       close(unit=iunit,status='keep')
 
@@ -210,7 +218,7 @@ C zero-out the two-electron contributions to the force
       call zeroit(bl(lforc2),natom*3)
 
       call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
-     &                  bl(lforc2),ncore,trans,Ccen,ncen)
+     &                  bl(lforc2),ncore,trans,Ccen,ncen,iatom)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -244,7 +252,7 @@ c ...........................................................
 C ====================================================================== 
       subroutine mp2_grad_cim(ncf,    nval,   nvir,   iprint, thresh,
      1                        nmo,    natoms, gradv,  ncore,  trans,
-     2                        Ccen,   ncen)
+     2                        Ccen,   ncen,   iatom)
 C
 C  Main routine for CIM-MP2-gradients. 
 C  In CIM we don't release memory after energy calculation. Some of the
@@ -286,7 +294,7 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*),trans(nmo,nmo),Ccen(ncf,ncen)
+      dimension gradv(3,*),trans(nmo,nmo),Ccen(ncf,ncen),iatom(natoms)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
@@ -746,10 +754,11 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.0) then
          Write(iout,*) ' MP2 gradients after A2-terms'
-         call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
+C      endif
 
 
       stop
@@ -1202,7 +1211,7 @@ c
 
 
 C ======================================================================
-      subroutine torque_CIM(natoms,idft,datnuc,forc3)
+      subroutine torque_CIM(natoms,idft,datnuc,forc3,iatomf)
 
       use memory
 
@@ -1215,26 +1224,27 @@ c
       common /tape/inp,inp2,iout,ipun,iarc,icond,itest,npl(9)
 c     common /big/bl(10000)
       dimension datnuc(5,*)
-      dimension forc3(3,natoms)
+      dimension forc3(3,natoms),iatomf(natoms)
       parameter (zero=0.0d0,thrsh=1.0d-6)
 c---------------------------------------------------------------------
 c INPUT :
 c
-c natoms - number of atoms
-c idft   - dft flag  0 - no dft
-c                   >0 - dft contribution to forces needs to be computed
-c forc3  -  space for total forces (will be read in from file)
-c
+c natoms    - number of atoms
+c idft      - dft flag  0 - no dft
+c                      >0 - dft contribution to forces needs to be computed
+c forc3     -  space for total forces (will be read in from file)
+c iatomf(i) - label of ith atom in the whole system
+C
 c OUTPUT:
 c
 c forc3 - total forces on atoms
 c
 c---------------------------------------------------------------------
 C Simply modify the original subroutine in PQS for always printing out
-C the energy. -NZG_5/5/2017 @UARK
+C the energy. -NZG_5/5/2017 @0UARK
       write(iout,151)
   151 format(
-     *' Atom Name       force-x    force-y    force-z'/)
+     *' Atom  Name FullLabel   force-x      force-y     force-z'/)
 c
       sumx=zero
       sumy=zero
@@ -1255,12 +1265,12 @@ c torque= RxF (cross product of the coordinate and the the force
          torqy=torqy+forc3(1,iat)*zat-forc3(3,iat)*xat
          torqz=torqz+forc3(2,iat)*xat-forc3(1,iat)*yat
 c
-         write(iout,200) iat,datnuc(5,iat),
+         write(iout,200) iat,datnuc(5,iat),iatomf(iat),
      *                   forc3(1,iat),forc3(2,iat),forc3(3,iat)
 c
       enddo
 c
-  200 format(i3,5x,a3,3x,3(f10.7,1x))
+  200 format(i3,5x,a3,3x,i4,4x,3(f11.7,1x))
 c
       formax=abs(max(sumx,sumy,sumz,torqx,torqy,torqz))
       formin=abs(min(sumx,sumy,sumz,torqx,torqy,torqz))

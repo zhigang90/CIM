@@ -97,7 +97,6 @@ C
      $      ERR=95)
 c
       READ(40,ERR=96) nmo,ichk
-      write(6,*) "nmo read from mos file",nmo
       If(itype.gt.0.and.ichk.ne.itype) go to 94
       If(nmo.gt.ncf) Call nerror(13,'File IO routine <ReadMOS>',
      $     'Too many MOs on file for current system',0,0)
@@ -156,7 +155,6 @@ C
       OPEN (UNIT=40,FILE=file(1:len),FORM='UNFORMATTED',
      $      STATUS='UNKNOWN',ERR=95)
 c
-      write(6,*) 'nmo write to mos file',nmo
       WRITE(40,ERR=96) nmo,itype
       WRITE(40,ERR=96) cmo
       If(wreorb) WRITE(40,ERR=97) eorb

@@ -1055,6 +1055,46 @@ C
       end subroutine rread8
 
 
+      subroutine iread8(iunit, key, n, M)
+      implicit none
+      character key*(*),line*200
+      integer iunit,n,L,k,iyes,itry
+      integer M(n)
+C
+      do k=1,n
+         M(k)=0
+      enddo
+C
+      iyes=0
+      itry=0
+      L=len(key)
+ 50   do while(iyes.eq.0)
+         read(iunit,'(a)',end=100,err=100) line
+         if (index(line,key(1:L)).ne.0) then
+            iyes=1
+            goto 100
+         endif
+      enddo
+C
+ 100  itry=itry+1
+      if (iyes.eq.0) then
+         if (itry.eq.1) then
+            rewind(iunit)
+            goto 50
+         else
+            write(*,*) 'ERROR: can not find '//key(1:L)//' in .txt'
+            stop
+         endif
+      else
+         read(iunit,'(8I10)') (M(k),k=1,n)
+         read(iunit,*,end=999)
+      endif
+
+ 999  return
+
+      end subroutine iread8
+
+
 c     ###########################################################
 c     ##  subroutine dislink -- atoms distance & link matrix   ##
 c     ##  2005.01.09 by Wei Li; Update 2005.10.16 by Wei Li    ##
@@ -1238,7 +1278,6 @@ C----------------------------------------------------------------------------
 C Calc Mulliken population (2001.04.21)
 C SR(j,i)=\sum_{k}^{NW}\sum_{l\in{j}}C_{ki}S_{kl}C_{li}  (j=1,natom; i=1,Nmo)
 C----------------------------------------------------------------------------
-      write(6,*) "norb for pop",nmo
       DO I=1,NMO
          DO J=1,NATOM
             SOB(I,J)=J
