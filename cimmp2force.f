@@ -18,7 +18,7 @@ C    Svein Saebo, Fayetteville, AR Summer 2002
 C
 C    In CIM, we do not have dummy atoms, so only natom is needed here.
 C    Zhigang 3/24/2017 @UARK
-
+C
       use memory
 
       implicit real*8(a-h,o-z)
