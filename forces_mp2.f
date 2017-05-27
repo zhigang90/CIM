@@ -253,7 +253,6 @@ C  open the <Tij>, <Kov> and <bins> files
       OPEN (UNIT=ndisk2,FILE=filname2(1:len+4),FORM='UNFORMATTED',
      $      ACCESS='DIRECT',RECL=10*nvir*nmo)
       inquire(file=filname3(1:len+5),exist=exists)
-      write(6,*) "ndisk3",exists
       OPEN (UNIT=ndisk3,FILE=filname3(1:len+5),FORM='UNFORMATTED',
      $      ACCESS='DIRECT',RECL=10*lbin)
 C
@@ -526,20 +525,20 @@ C
       call elapsec(ecphf1)
 C  for frozen core -------------------------------------------------
       if(ncore.gt.0) then
-        call matdef('Zic','r',nval,ncore)
-        call matdef('Yoo','q',nmo,nmo)
-        icic=mataddr('Zic')
-        iyoo=mataddr('Yoo')
-        if(iprint.ge.6) call matprint('Y',6)
-        call matmmul2('occa','Y','Yoo','t','n','n')
-        icor=mataddr('epsi')
-        call putZic(bl(icic),bl(iyoo),nmo,nval,ncore,bl(icor))
+         call matdef('Zic','r',nval,ncore)
+         call matdef('Yoo','q',nmo,nmo)
+         icic=mataddr('Zic')
+         iyoo=mataddr('Yoo')
+         if(iprint.ge.6) call matprint('Y',6)
+         call matmmul2('occa','Y','Yoo','t','n','n')
+         icor=mataddr('epsi')
+         call putZic(bl(icic),bl(iyoo),nmo,nval,ncore,bl(icor))
 cc
-        if(iprint.ge.3) then
-          call matprint('Yoo',6)
-          call matprint('Zic',6)
-        endif
-        call matrem('Yoo')
+         if(iprint.ge.3) then
+            call matprint('Yoo',6)
+            call matprint('Zic',6)
+         endif
+         call matrem('Yoo')
       endif
 C  end frozen core stuff -------------------------------------------
 C
@@ -611,14 +610,14 @@ C  Delete the <bins> file
 c ..................................................................
 cc
       if(iprint.ge.2) then
-        call secund(tt2)
-        call elapsec(elaps2)
-        tt21=tt2-tcphf
-        el21=elaps2-ecphf
-        t21=tt21/sixty
-        e21=el21/sixty
-        write(iout,*) ' Binsort Phase2'
-        write(iout,100) t21,e21
+         call secund(tt2)
+         call elapsec(elaps2)
+         tt21=tt2-tcphf
+         el21=elaps2-ecphf
+         t21=tt21/sixty
+         e21=el21/sixty
+         write(iout,*) ' Binsort Phase2'
+         write(iout,100) t21,e21
       endif
 cc
       if(iprint.ge.2) then
@@ -647,16 +646,16 @@ C  NOTE only one-electron part left of Fx
       call matrem('XF')
 cc
       if(iprint.ge.2) then
-        Write(iout,*) ' MP2 gradients after X-terms:'
-        call torque(NAtoms,0,bl(inuc),gradv )
+         Write(iout,*) ' MP2 gradients after X-terms:'
+         call torque(NAtoms,0,bl(inuc),gradv )
       endif
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
 C
       if(iprint.ge.3) then
-        write(iout,*) ' final W'
-        call matprint('W',6)
+         write(iout,*) ' final W'
+         call matprint('W',6)
       endif
 cc
       call matdef('DY','r',ncf,nmo)
@@ -676,13 +675,13 @@ C
       call matrem('fxsx')
 cc
       if(iprint.ge.3) then
-        write(iout,*) ' Final W:'
-        call matprint('W',6)
+         write(iout,*) ' Final W:'
+         call matprint('W',6)
       endif
 cc
       if(iprint.ge.2) then
-        Write(iout,*) ' MP2 gradients after W-terms:'
-        call torque(NAtoms,0,bl(inuc),gradv )
+         Write(iout,*) ' MP2 gradients after W-terms:'
+         call torque(NAtoms,0,bl(inuc),gradv )
       endif
 C
 C   before returning calculate the MP2 dipole moments
@@ -725,12 +724,12 @@ C
       call retmark
 cc
       if(iprint.ge.2) then
-        call secund(tt3)
-        call elapsec(et3)
-        ttra=(tt3-tt2)/sixty
-        etra=(et3-elaps2)/sixty
-        write(iout,*)' Time forming gradient vector:'
-        write(iout,100) ttra,etra
+         call secund(tt3)
+         call elapsec(et3)
+         ttra=(tt3-tt2)/sixty
+         etra=(et3-elaps2)/sixty
+         write(iout,*)' Time forming gradient vector:'
+         write(iout,100) ttra,etra
       endif
 C
 c ..................................................................
@@ -1462,9 +1461,15 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
+C NZG
+C                  call matzero('TAO')
+C NZG
                   call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
+C NZG
+C                  call zeroit(bl(itadr),mylsize)
+C NZF
                   call secund(ttbt3)
                   ttbad=ttbad+ttbt3-ttbt2
                   numt=numt+1
@@ -1630,9 +1635,9 @@ c  basis function symmetry pairs are in inx(ifp)
 c .............................................................
       natoms=igetival('na')
       if(natoms.le.30) then
-        smal=.true.
+         smal=.true.
       else
-        smal=.false.
+         smal=.false.
       end if
       smal=.true.       ! always use small option
 c-----------------------------------------------------------
@@ -1684,12 +1689,12 @@ c  establish orbital symmetry characters
       nlast=nmo
 C  this causes problems, jump over this for now.  SS
       if(nsym.gt.1000) then
-        call getint(nval*nsym,iorbpair)
-        call getmem(ncf,itmp)
-        icano=mataddr('cano')
-        call OrbSymPair(nsym, ncf ,   bl(icano), bl(ifp) ,nfirst,
+         call getint(nval*nsym,iorbpair)
+         call getmem(ncf,itmp)
+         icano=mataddr('cano')
+         call OrbSymPair(nsym, ncf ,   bl(icano), bl(ifp) ,nfirst,
      1                   nlast,iprint, bl(itmp),  bl(iorbpair))
-        call retmem(1)
+         call retmem(1)
       endif
 c.................................................
 c   reserve space for one AO integral matrix
@@ -1731,27 +1736,27 @@ C
 C     the following for 'BIG' option, SS
 C
       if(.not.smal) then
-        call getint(ncf,if2cr)
-        call getint(ncf,if2cc)
-        call memstat(nreq,nmark,lastaddr,memtot,iceiling,ioffset)
-        lcore=igetival('lcore')
-        kcore=lcore-ioffset
-        memused=lastaddr-ioffset
-        mem=kcore-memused-6*ncf*ncf-2000000
-        memx=mem/9
-        mem=memx*4
-        lenindj=memx*4
-        call getmem(memx,indlj)
-        write(6,*)' BIG option used for integrals'
-        write(iout,*) ' memory assigned to the job:     ',lcore-ioffset
-        write(iout,*) ' memory available for integrals: ',mem, '*2'
-        lmp2_size = mem
-        call getmem(lmp2_size,lmp2int)
-        write(iout,*) ' lmp2int start:',lmp2int-ioffset,mem,' long'
-        write(iout,*) ' end integral storage',lmp2int-ioffset+2*mem
-        indmax=0
-        istmax=0
-        lenmax=lenindj/6
+         call getint(ncf,if2cr)
+         call getint(ncf,if2cc)
+         call memstat(nreq,nmark,lastaddr,memtot,iceiling,ioffset)
+         lcore=igetival('lcore')
+         kcore=lcore-ioffset
+         memused=lastaddr-ioffset
+         mem=kcore-memused-6*ncf*ncf-2000000
+         memx=mem/9
+         mem=memx*4
+         lenindj=memx*4
+         call getmem(memx,indlj)
+         write(6,*)' BIG option used for integrals'
+         write(iout,*) ' memory assigned to the job:     ',lcore-ioffset
+         write(iout,*) ' memory available for integrals: ',mem, '*2'
+         lmp2_size = mem
+         call getmem(lmp2_size,lmp2int)
+         write(iout,*) ' lmp2int start:',lmp2int-ioffset,mem,' long'
+         write(iout,*) ' end integral storage',lmp2int-ioffset+2*mem
+         indmax=0
+         istmax=0
+         lenmax=lenindj/6
       endif
 c
 c-----------------------------------------------------------------------
@@ -1763,133 +1768,131 @@ c-----------------------------------------------------------------------
       nbin=0
       nskipped=0
       do ics=1,ncs
-      call get_shell_size(bl(ictr),ics,ics_size)
-      lmp2_siz1=ncf2*ics_size
-      do kcs=1,ics
+         call get_shell_size(bl(ictr),ics,ics_size)
+         lmp2_siz1=ncf2*ics_size
+         do kcs=1,ics
 cc      if(LastSymPair(ics,kcs,nsym,inx(ifp1),inegl,iret)) cycle
 c  of each (ics,kcs) pair, calculate only the last one
 c  (ics',kcs')>(ics,kcs) if ics'>ics or ics'=ics and kcs'>kcs
 c
 c
-        call get_shell_size(bl(ictr),kcs,kcs_size)
-        call secund(tt2)
-        call elapsec(telap2)
-        ttrans=ttrans+tt2-tt3
-        elaptrans=elaptrans+telap2-telap3
+            call get_shell_size(bl(ictr),kcs,kcs_size)
+            call secund(tt2)
+            call elapsec(telap2)
+            ttrans=ttrans+tt2-tt3
+            elaptrans=elaptrans+telap2-telap3
 c
-           if(smal) then
-           lmp2_size=lmp2_siz1*kcs_size
+            if(smal) then
+               lmp2_size=lmp2_siz1*kcs_size
 c
 c check if a size of the lmp2 integral buffer is not too big
 c if it is  then split over kcs ( and possibly ics)
 c
 c
-          call check_size1(lmp2_size,ncf,nval,nval,ntimes)
+               call check_size1(lmp2_size,ncf,nval,nval,ntimes)
 c
-          call set_passes(bl(ictr),ics,kcs,ics_size,kcs_size,
-     *                    ntimes,Ipass,Kpass,Itimes,Ktimes)
+               call set_passes(bl(ictr),ics,kcs,ics_size,kcs_size,
+     *                         ntimes,Ipass,Kpass,Itimes,Ktimes)
 c
 c
-          do itime=1,itimes
-             icf1=ipass(1,itime)
-             icf2=ipass(2,itime)
-             iatonce=icf2-icf1+1
-          do ktime=1,ktimes
-             kcf1=kpass(1,ktime)
-             kcf2=kpass(2,ktime)
-             katonce=kcf2-kcf1+1
+               do itime=1,itimes
+                  icf1=ipass(1,itime)
+                  icf2=ipass(2,itime)
+                  iatonce=icf2-icf1+1
+                  do ktime=1,ktimes
+                     kcf1=kpass(1,ktime)
+                     kcf2=kpass(2,ktime)
+                     katonce=kcf2-kcf1+1
 c
-             lmp2_size=iatonce*katonce*ncf2
+                     lmp2_size=iatonce*katonce*ncf2
 c
-          call getmem(lmp2_size,lmp2int)
-          call mmark
-      call int_lmp2(bl,     bl(ictr),thresh,
-     *                    ics,icf1,icf2,kcs,kcf1,kcf2,
-     1              bl(mapf2s),bl(idics),iprint,bl(lmp2int),nintotal,
-     2              nrow,   ncol,    bl(irow),bl(icol),bl(lzero))
-          call retmark
-        if(nintotal.eq.0) then
-        call retmem(1)
-          cycle
-        else
-          iktot=iktot+1
-        end if
+                     call getmem(lmp2_size,lmp2int)
+                     call mmark
+                     call int_lmp2(bl,bl(ictr),thresh,ics,icf1,icf2,kcs,
+     &                             kcf1,kcf2,bl(mapf2s),bl(idics),
+     &                             iprint,bl(lmp2int),nintotal,nrow,
+     &                             ncol,bl(irow),bl(icol),bl(lzero))
+                     call retmark
+                     if (nintotal.eq.0) then
+                        call retmem(1)
+                        cycle
+                     else
+                        iktot=iktot+1
+                     end if
 c
 ccc      write(*,*) 'lmp2 int',ics,kcs,(bl(lmp2int+ii-1),ii=1,lmp2_size)
 c
-      call secund(tt3)
-      call elapsec(telap3)
-      tinteg=tinteg+tt3-tt2
-      elapint=elapint+telap3-telap2
-      call mmark
-      call matdef('Tmyl','q',nval,nval)
-      itmylam=mataddr('Tmyl')
+                     call secund(tt3)
+                     call elapsec(telap3)
+                     tinteg=tinteg+tt3-tt2
+                     elapint=elapint+telap3-telap2
+                     call mmark
+                     call matdef('Tmyl','q',nval,nval)
+                     itmylam=mataddr('Tmyl')
 c......................................................................
-       call Trasigtoj(ncf,    ncs,    nval,
-     *                    ics,icf1,icf2,kcs,kcf1,kcf2,
-     1              bl(ictr),bl(lmp2int),bl(ioccu),iprint,thresh,
-     2              bl(ixadr),nrow,   ncol,   bl(irow),bl(icol),
-     3              bl(irow1),bl(icol1),smal, Y,    bl(itmylam),
-     4                ibins,  int1,   lbin,   nrcpb,  ndisk3,
-     5                iscs)
-       call matrem('Tmyl')
-       call retmark
+                     call Trasigtoj(ncf,ncs,nval,ics,icf1,icf2,kcs,kcf1,
+     1                              kcf2,bl(ictr),bl(lmp2int),bl(ioccu),
+     2                              iprint,thresh,bl(ixadr),nrow,ncol,
+     3                              bl(irow),bl(icol),bl(irow1),
+     4                              bl(icol1),smal,Y,bl(itmylam),ibins, 
+     5                              int1,lbin,nrcpb,ndisk3,iscs)
+                     call matrem('Tmyl')
+                     call retmark
 c......................................................................
-       call retmem(1)          ! lmp2int
+                     call retmem(1)          ! lmp2int
 c......................................................................
-       enddo    ! over ktime (selected kcf belonging to kcs shell )
-       enddo    ! over itime (selected icf belonging to ics shell )
+                  enddo    ! over ktime (selected kcf belonging to kcs shell )
+               enddo    ! over itime (selected icf belonging to ics shell )
 c........................................................................
-       else
-          ind=0
-          intstore=0
-          call mmark
-          call getmem(lmp2_size,lrestor)
-          call int_lmp2b(bl,bl(ictr),thresh,     ics,     kcs,
-     1             bl(mapf2s),bl(idics),iprint,  bl(lmp2int),nintotal,
-     2             bl(icol), bl(irow),  bl(if2cc),bl(if2cr),bl(indlj),
-     3             bl(lrestor),  nrow,    ncol,     ind,     intstore,
-     4             lmp2_size, lenmax)
-          call retmark
-          ttint=ttint+nintotal
-        if(nintotal.eq.0) then
-          cycle
-        else
-          iktot=iktot+1
-        end if
+            else
+               ind=0
+               intstore=0
+               call mmark
+               call getmem(lmp2_size,lrestor)
+               call int_lmp2b(bl,bl(ictr),thresh,ics,kcs,bl(mapf2s),
+     1                        bl(idics),iprint,bl(lmp2int),nintotal,
+     2                        bl(icol),bl(irow),bl(if2cc),bl(if2cr),
+     3                        bl(indlj),bl(lrestor),nrow,ncol,ind,
+     4                        intstore,lmp2_size,lenmax)
+               call retmark
+               ttint=ttint+nintotal
+               if (nintotal.eq.0) then
+                  cycle
+               else
+                  iktot=iktot+1
+               end if
 c
 ccc      write(*,*) 'lmp2 int',ics,kcs,(bl(lmp2int+ii-1),ii=1,lmp2_size)
 c
-      call secund(tt3)
-      call elapsec(telap3)
-      tinteg=tinteg+tt3-tt2
-      elapint=elapint+telap3-telap2
-      call mmark
-      call matdef('Tmyl','q',nval,nval)
-      itmylam=mataddr('Tmyl')
+               call secund(tt3)
+               call elapsec(telap3)
+               tinteg=tinteg+tt3-tt2
+               elapint=elapint+telap3-telap2
+               call mmark
+               call matdef('Tmyl','q',nval,nval)
+               itmylam=mataddr('Tmyl')
 C
-      call getinfs(bl(ictr),ics,kcs,icf1,icf2,kcf1,kcf2)
+               call getinfs(bl(ictr),ics,kcs,icf1,icf2,kcf1,kcf2)
 c......................................................................
-       call Trasigtoj(ncf,    ncs,    nval,
-     *                    ics,icf1,icf2,kcs,kcf1,kcf2,
-     1              bl(ictr),bl(lmp2int),bl(ioccu),iprint,thresh,
-     2              bl(ixadr),nrow,   ncol,   bl(irow),bl(icol),
-     3              bl(irow1),bl(icol1),smal, Y,    bl(itmylam),
-     4                ibins,  int1,   lbin,   nrcpb,  ndisk3,
-     5                iscs)
-       call matrem('Tmyl')
-       call retmark
+               call Trasigtoj(ncf,ncs,nval,ics,icf1,icf2,kcs,kcf1,kcf2,
+     1                        bl(ictr),bl(lmp2int),bl(ioccu),iprint,
+     2                        thresh,bl(ixadr),nrow,ncol,bl(irow),
+     3                        bl(icol),bl(irow1),bl(icol1),smal,Y,
+     4                        bl(itmylam),ibins,int1,lbin,nrcpb,ndisk3,
+     5                        iscs)
+               call matrem('Tmyl')
+               call retmark
 c......................................................................
-        endif
-      end do
+            endif
+         end do
       end do
 cc
       if(iprint.ge.2) then
-        write(iout,61)
-        write(iout,*) '  '
+         write(iout,61)
+         write(iout,*) '  '
 c
-        write(iout,62) tinteg/sixty, elapint/sixty
-        write(iout,64) ttrans/sixty, elaptrans/sixty
+         write(iout,62) tinteg/sixty, elapint/sixty
+         write(iout,64) ttrans/sixty, elaptrans/sixty
       endif
 cc
    61 format(' CPU & Elapsed time for D1 contribution')
@@ -1899,7 +1902,7 @@ c
       end
 C==============Trasigtoj================================================
       subroutine Trasigtoj(ncf,    ncs,    nval,
-     *                    ics,icf1,icf2,kcs,kcf1,kcf2,
+     *                     ics,    icf1,   icf2,   kcs,    kcf1,   kcf2,
      1                     inx,    xint,   CMO,    iprint, thresh,
      2                     xmat,   nrow,   ncol,   irow,   icol,
      3                     irow1,  icol1,  smal,   Y,      Tmylam,
@@ -1963,91 +1966,91 @@ ckw   icf1=inx(11,ics)+1
 ckw   icf2=inx(10,ics)
 c
       do my=icf1,icf2
-      do lam=kcf1,kcf2
-      if(lam.gt.my) exit
-      if(smal) then
-        call ExtractOne(ncf,   my,    lam,   icf1,  icf2,
-     2                  kcf1,  kcf2,  xint,  xmat,  nrow,
-     3                  ncol,  irow,  icol,  nrow1, ncol1,
-     4                  irow1, icol1)
-      else
-        call mmark
-        call ExtractEn(ncf,   my,    lam,  icf1,  icf2,
-     2                 kcf1,  kcf2,  xint, xmat,  nrow,
-     3                 ncol,  irow,  icol, nrow1, ncol1,
-     4                 irow1, icol1)
-        call retmark
-      endif
+         do lam=kcf1,kcf2
+            if(lam.gt.my) exit
+            if(smal) then
+               call ExtractOne(ncf,   my,    lam,   icf1,  icf2,
+     2                         kcf1,  kcf2,  xint,  xmat,  nrow,
+     3                         ncol,  irow,  icol,  nrow1, ncol1,
+     4                         irow1, icol1)
+            else
+               call mmark
+               call ExtractEn(ncf,   my,    lam,  icf1,  icf2,
+     2                        kcf1,  kcf2,  xint, xmat,  nrow,
+     3                        ncol,  irow,  icol, nrow1, ncol1,
+     4                        irow1, icol1)
+               call retmark
+            endif
 c
-      if(nrow1.eq.0.or.ncol1.eq.0) cycle
-      call matdef('quartra','r',nval,ncol1)
-      call matdef('quartr2','r',nrow1,nval)
-      iquatr=mataddr('quartra')
-      iquat2=mataddr('quartr2')
-      call Transbatch(ncf,nval,nrow1,ncol1,irow1,
-     1                icol1,xmat,CMO,itrunc)
-      call matscal('quartra',thresh)
-      call matscal('quartr2',thresh)
+            if(nrow1.eq.0.or.ncol1.eq.0) cycle
+            call matdef('quartra','r',nval,ncol1)
+            call matdef('quartr2','r',nrow1,nval)
+            iquatr=mataddr('quartra')
+            iquat2=mataddr('quartr2')
+            call Transbatch(ncf,nval,nrow1,ncol1,irow1,
+     1                      icol1,xmat,CMO,itrunc)
+            call matscal('quartra',thresh)
+            call matscal('quartr2',thresh)
 C
 C  batch of quartertransformed integrals for current my,lam
 C  is returned in quartra (from right) and in quartr2 (from left)
 C
 C  get Tmylam(i,j) from bins:
 C
-      mylam=my*(my-1)/2+lam
-      istar=(mylam-1)*nrcpb
-      mrec=istar+1
-      nbin=nbin+1
-      read(ndisk3,rec=mrec) int1,ibins
-      iwrd=1
-      ij=0
-      do ii=1,nval
-      do jj=1,ii
-      ij=ij+1
-      if(ij.gt.lbin) then
+            mylam=my*(my-1)/2+lam
+            istar=(mylam-1)*nrcpb
+            mrec=istar+1
+            nbin=nbin+1
+            read(ndisk3,rec=mrec) int1,ibins
+            iwrd=1
+            ij=0
+            do ii=1,nval
+               do jj=1,ii
+                  ij=ij+1
+                  if (ij.gt.lbin) then
 C  end of bin  read next
-        iwrd=iwrd+1
-        mrec=istar+iwrd
-        nbin=nbin+1
-        read(ndisk3,rec=mrec) int1,ibins
-        ij=1
-      endif
+                     iwrd=iwrd+1
+                     mrec=istar+iwrd
+                     nbin=nbin+1
+                     read(ndisk3,rec=mrec) int1,ibins
+                     ij=1
+                  endif
 c -- decompress the integral ------------------------
-      If(int1(1,ij).eq.0) Then
-        xx = ibins(1,ij)*thresh
-      Else If(int1(1,ij).gt.0) Then
-        xx = ibins(1,ij)*thresh
-        xx = xx + SIGN(int1(1,ij)*dblcmp,xx)
-      Else
-        xx = ibins(1,ij)*thresh*10.0d0**(-int1(1,ij))
-      EndIf
-      Tmylam(ii,jj)=xx
-      If(int1(2,ij).eq.0) Then
-        xx = ibins(2,ij)*thresh
-      Else If(int1(2,ij).gt.0) Then
-        xx = ibins(2,ij)*thresh
-        xx = xx + SIGN(int1(2,ij)*dblcmp,xx)
-      Else
-        xx = ibins(2,ij)*thresh*10.0d0**(-int1(2,ij))
-      EndIf
-      Tmylam(jj,ii)=xx
+                  If (int1(1,ij).eq.0) Then
+                     xx = ibins(1,ij)*thresh
+                  Else If(int1(1,ij).gt.0) Then
+                     xx = ibins(1,ij)*thresh
+                     xx = xx + SIGN(int1(1,ij)*dblcmp,xx)
+                  Else
+                     xx = ibins(1,ij)*thresh*10.0d0**(-int1(1,ij))
+                  EndIf
+                  Tmylam(ii,jj)=xx
+                  If (int1(2,ij).eq.0) Then
+                     xx = ibins(2,ij)*thresh
+                  Else If(int1(2,ij).gt.0) Then
+                     xx = ibins(2,ij)*thresh
+                     xx = xx + SIGN(int1(2,ij)*dblcmp,xx)
+                  Else
+                     xx = ibins(2,ij)*thresh*10.0d0**(-int1(2,ij))
+                  EndIf
+                  Tmylam(jj,ii)=xx
 c ---------------------------------------------------
-      enddo
-      enddo
+               enddo
+            enddo
 C  form T tilda
-      call atoat2(Tmylam,nval,'n',iscs)
+            call atoat2(Tmylam,nval,'n',iscs)
 C
-      call matscal('Tmyl',four)
+            call matscal('Tmyl',four)
 C
-C  form matrix Xnyi (eq.46)
+C  form matrix Ynyi (eq.46)
 C
-      call FormXnyi(Y,Tmylam,bl(iquatr),nval,ncol1,icol1,ncf)
-      if(my.gt.lam)
-     1   call FormXny2(Y,Tmylam,bl(iquat2),nval,nrow1,irow1,ncf)
+            call FormXnyi(Y,Tmylam,bl(iquatr),nval,ncol1,icol1,ncf)
+            if(my.gt.lam)
+     1         call FormXny2(Y,Tmylam,bl(iquat2),nval,nrow1,irow1,ncf)
 C
-      call matrem('quartr2')
-      call matrem('quartra')
-      enddo
+            call matrem('quartr2')
+            call matrem('quartra')
+         enddo
       enddo
       call retmem(1)
       end
@@ -3111,8 +3114,11 @@ C
 C   called from rphas2
 C
 C=============
-      dimension T(ncf,*),D(ncf,*),DDT(ncf,*)
+      dimension T(ncf,ncf),D(ncf,*),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
+C NZG
+C      T=0.0D0
+C NZG
       fact=one4
       if(my.eq.lam) fact=one8
       dml=D(my,lam)*half*fact+DDT(my,lam)*one8

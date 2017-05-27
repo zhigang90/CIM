@@ -1521,7 +1521,7 @@ C
                   call matzero('denf')
                   call matzero('ddtf')
 
-                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+                  call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
                   call secund(ttbt3)
@@ -1658,5 +1658,64 @@ C =====================================================================
       end subroutine BackTrans_CIM
 
 
+      subroutine addtoT1_CIM(T,D,DDT,ncf,my,lam)
+      implicit real*8(a-h,o-z)
+C
+C   this subroutine adds extra terms to TAO before contracting with
+C   integral derivatives.
+C   We add here 2 contributions
+C   contributions from the HF gradient:
+C   contribution from terms contracted with Fx
+C   only 2-electron contributions are handled here.
+C   Now integral derivatives only need to be calculated once
+C   (instead of 3 times: here + HF gradient + Fx)
+C
+C   this is quite expensive can it be improved?
+C
+C   I have made my best effort to move as many operation as far
+C   out as possible.
+C   this makes it hard to figure out what we are doing.
+C   please look in 'addtot_orig'  which does the same as this
+C   subroutine.
+C
+C   Svein Saebo, Fayetteville AR, July 2003
+C
+C   Arguments:
+C   INPUT : T in AO basis (fully backtransformed)
+C   OUTPUT: T input matrix plus extra terms to include HF gradient and Fx
+C           terms
+C   D density matrix 'den0'
+C   DDT= 2X - 2C+AC
+C
+C   called from rphas2
+C
+C=============
+      dimension T(ncf,*),D(ncf,ncf),DDT(ncf,ncf)
+      parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
+C NZG
+      D=0.0D0; DDT=0.0D0
+
+
+      fact=one4
+      if(my.eq.lam) fact=one8
+      dml=D(my,lam)*half*fact+DDT(my,lam)*one8
+C     dml=DDT(my,lam)*one8
+      ddtml=DDT(my,lam)*one8
+c
+      do ny=1,ncf
+         dmyny=D(ny,my)*fact+DDT(ny,my)*one4
+         do isi=1,ncf
+            T(isi,ny)=T(isi,ny)+dmyny*D(isi,lam)-dml*D(isi,ny)
+         enddo
+      enddo
+c
+      if(my.le.lam) RETURN
+      do isi=1,ncf
+         disimy=D(isi,my)*one4
+         do ny=1,ncf
+            T(ny,isi)=T(ny,isi)+disimy*DDT(ny,lam)-ddtml*D(ny,isi)
+         enddo
+      enddo
+      end
       
