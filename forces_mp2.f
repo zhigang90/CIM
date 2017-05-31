@@ -2698,12 +2698,12 @@ C====transpose=============================================
 C     calculates the transpose of a square matrix dimension n*n
       IMPLICIT REAL*8(A-H,O-Z)
       DIMENSION A(n,*)
-      do  I=1,N
-      do  J=1,I
-      HOLD=A(I,J)
-      A(I,J)=A(J,I)
-      A(J,I)=HOLD
-      enddo
+      do I=1,N
+         do J=1,I
+            HOLD=A(I,J)
+            A(I,J)=A(J,I)
+            A(J,I)=HOLD
+         enddo
       enddo
       END
 C====atoat=====================================================
