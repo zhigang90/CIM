@@ -1462,6 +1462,7 @@ CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
 C NZG
+                  Tmnao=0.0D0
 C                  call matzero('TAO')
 C NZG
                   call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
