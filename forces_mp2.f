@@ -1453,8 +1453,12 @@ c ---------------------------------------------------
                   call atoat2(Tmnmo,nval,'y',iscs)
 C  backtransform this matrix to AO basis
                   call secund(ttbt1)
-                  call BackTrans(Tmnao,ncf,nval,ipr,jpr,
-     2                           bl(ipoint),bl(jpoint),bl(iocca))
+C                  call BackTrans(Tmnao,ncf,nval,ipr,jpr,
+C     2                           bl(ipoint),bl(jpoint),bl(iocca))
+                  call BackTrans_CIM(Tmnmo,Tmnao,ncf,nval,nval,
+     &                               bl(iocca),bl(iocca))
+
+
                   call secund(ttbt2)
                   ttbt=ttbt+ttbt2-ttbt1
 CC
