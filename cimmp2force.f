@@ -186,6 +186,14 @@ C NZG_5/4/2017 @UARK
       
       call NJ_denmat_sym(ncf,ncf,nocc,bl(lvec),bl(lden))
 
+C calculate density matrix from only the central MOs
+C NZG_6/1/2017 @UARK
+      call matdef('dencen','s',ncf,ncf)
+      ldencen=mataddr('dencen')
+      call setival('ldencen',ldencen)
+
+      call NJ_denmat_sym(ncf,ncf,ncen,Ccen,bl(ldencen))
+
 c  check if the basis set contains L-shells
 c  and if it does then make S,P partitioning
 c
@@ -1408,7 +1416,9 @@ c
 C
       call matdef('denf','q',ncf,ncf)
       call matdef('ddtf','q',ncf,ncf)
-      call matcopy('den0','denf')
+
+C      call matcopy('den0','denf')
+      call matcopy('dencen','denf')
       call matcopy('DDT','ddtf')
       idena=mataddr('denf')
       iddt=mataddr('ddtf')
@@ -1450,9 +1460,11 @@ C  inaddr is a pointer within this large array to a particular T
 C  loop over functions within the two shells contruct the T's and store
 C  get pointers ipoint and number of functions retained ipr
 C
-            call TranSetup(bl(icta),ncf,nval,ipr,jpr,
-     1                     bl(ipoint),bl(jpoint),bl(ischwarz),ncs,MYS,
-     2                     LAS,ancf,bl(mapf2s),thresh)
+C  For large systems, the subroutine may cause large errors. -NZG
+C  In CIM calculation, we don't do the prescreening. -NZG 6/1/2017
+C            call TranSetup(bl(icta),ncf,nval,ipr,jpr,
+C     1                     bl(ipoint),bl(jpoint),bl(ischwarz),ncs,MYS,
+C     2                     LAS,ancf,bl(mapf2s),thresh)
 C
             my3=0
             do my=my1,my2
@@ -1518,7 +1530,7 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-                  call matzero('denf')
+C                  call matzero('denf')
                   call matzero('ddtf')
 
                   call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
