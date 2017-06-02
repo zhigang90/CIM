@@ -163,6 +163,7 @@ C      character*4::ENTYP
       real*8,allocatable::F2(:,:),FH(:,:),FHH(:),FIA(:,:),TRANS(:,:)
       real*8,allocatable::MAT(:,:),VECT(:,:),VALU(:),VC(:),dtmp(:)
       real*8,allocatable::virtime(:),DIAF(:),S2(:,:),MOS3(:,:)
+      real*8,allocatable::density(:,:)
       real*8,external::dtrace2
       character*8,allocatable::AtSymb(:)
 
@@ -448,6 +449,16 @@ C
       np4=4
       call matdef('fock','s',nbas,nbas)
       call matread('fock',np4,'fock_rhf')
+
+C Check density matrices from canonical and localized orbitals
+C      call matdef('den0','s',nbas,nbas)
+C      call matread('den0',np4,'den0_rhf')
+C      call matprint('den0',6)
+
+C      allocate(density(nbas,nbas))
+C      call NJ_denmat(0,nbas,nmo,nocc,SMOAW,density)
+C      write(6,*) density
+
       iafm=mataddr('fock')
       do i=1,nbas
          do j=1,i
