@@ -1706,7 +1706,7 @@ C=============
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
 C NZG
-      D=0.0D0; DDT=0.0D0
+      DDT=0.0D0
 
 
       fact=one4
