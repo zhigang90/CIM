@@ -1708,7 +1708,6 @@ C=============
 C NZG
       DDT=0.0D0
 
-
       fact=one4
       if(my.eq.lam) fact=one8
       dml=D(my,lam)*half*fact+DDT(my,lam)*one8
