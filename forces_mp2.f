@@ -1463,9 +1463,9 @@ CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
 C NZG
                   Tmnao=0.0D0
-                  call matzero('denf')
+C                  call matzero('denf')
 C NZG
-                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+                  call addtoT_orig(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
 C NZG
@@ -3115,10 +3115,10 @@ C
 C   called from rphas2
 C
 C=============
-      dimension T(ncf,ncf),D(ncf,*),DDT(ncf,*)
+      dimension T(ncf,ncf),D(ncf,ncf),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 C NZG
-C      T=0.0D0
+      T=0.0D0
 C NZG
       fact=one4
       if(my.eq.lam) fact=one8
@@ -3211,20 +3211,21 @@ C==========addtot_orig===================================
       implicit real*8(a-h,o-z)
       dimension T(ncf,*),D(ncf,*),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
+
       do ny=1,ncf
-      do isi=1,ncf
-      if(my.gt.lam) then
-      T(isi,ny)=T(isi,ny)
-     1 +one4*D(my,ny)*D(lam,isi)-one8*D(my,lam)*D(ny,isi)  !  SCF
+         do isi=1,ncf
+            if (my.gt.lam) then
+               T(isi,ny)=T(isi,ny)
+C     1 +one4*D(my,ny)*D(lam,isi)-one8*D(my,lam)*D(ny,isi)  !  SCF
      2 +one4*DDT(my,ny)*D(lam,isi)-one8*DDT(my,lam)*D(ny,isi)! Fx
       T(ny,isi)=T(ny,isi)
      2 +one4*DDT(lam,ny)*D(my,isi)-one8*DDT(my,lam)*D(ny,isi)! Fx
-      else
-       T(isi,ny)=T(isi,ny)
-     1 +one8*D(my,ny)*D(lam,isi)-on16*D(my,lam)*D(ny,isi)
+            else
+               T(isi,ny)=T(isi,ny)
+C     1 +one8*D(my,ny)*D(lam,isi)-on16*D(my,lam)*D(ny,isi)
      2 +one4*DDT(my,ny)*D(lam,isi)-one8*DDT(my,lam)*D(ny,isi)
-      endif
-      enddo
+            endif
+         enddo
       enddo
       end
 C================BackTrans============================================
