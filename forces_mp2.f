@@ -1465,7 +1465,7 @@ C NZG
                   Tmnao=0.0D0
 C                  call matzero('denf')
 C NZG
-                  call addtoT_orig(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
 C NZG
@@ -3122,12 +3122,13 @@ C NZG
 C NZG
       fact=one4
       if(my.eq.lam) fact=one8
-      dml=D(my,lam)*half*fact+DDT(my,lam)*one8
-C     dml=DDT(my,lam)*one8
+C      dml=D(my,lam)*half*fact+DDT(my,lam)*one8
+      dml=DDT(my,lam)*one8
+CC     dml=DDT(my,lam)*one8
       ddtml=DDT(my,lam)*one8
 c
       do ny=1,ncf
-         dmyny=D(ny,my)*fact+DDT(ny,my)*one4
+         dmyny=DDT(ny,my)*one4
          do isi=1,ncf
             T(isi,ny)=T(isi,ny)+dmyny*D(isi,lam)-dml*D(isi,ny)
          enddo
@@ -3209,9 +3210,10 @@ C
 C==========addtot_orig===================================
       subroutine addtoT_orig(T,D,DDT,ncf,my,lam)
       implicit real*8(a-h,o-z)
-      dimension T(ncf,*),D(ncf,*),DDT(ncf,*)
+      dimension T(ncf,ncf),D(ncf,*),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
+      T=0.0D0
       do ny=1,ncf
          do isi=1,ncf
             if (my.gt.lam) then
