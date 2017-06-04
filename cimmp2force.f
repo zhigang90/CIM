@@ -1707,6 +1707,8 @@ C=============
 
 C NZG
       DDT=0.0D0
+ 
+      write(6,*) D
 
       fact=one4
       if(my.eq.lam) fact=one8
