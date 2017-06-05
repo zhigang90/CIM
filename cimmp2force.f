@@ -185,7 +185,7 @@ C NZG_5/4/2017 @UARK
       call setival('ldensi',lden)
       
       call NJ_denmat_sym(ncf,ncf,nocc,bl(lvec),bl(lden))
-
+      call matprint('den0',6)
 C calculate density matrix from only the central MOs
 C NZG_6/1/2017 @UARK
       call matdef('dencen','s',ncf,ncf)
@@ -193,7 +193,7 @@ C NZG_6/1/2017 @UARK
       call setival('ldencen',ldencen)
 
       call NJ_denmat_sym(ncf,ncf,ncen,Ccen,bl(ldencen))
-
+      call matprint('dencen',6)
 c  check if the basis set contains L-shells
 c  and if it does then make S,P partitioning
 c
@@ -402,9 +402,9 @@ C  Calculate Matrix A
       call elapsec(eaik1)
       call matdef('Aik','s',nval,nval)
       call matzero('Aik')
-      call ATerms(nval,   nvir,   ndisk1, ndisk3, iprint,
-     $            nvrsq,  nindxp, lbin,   nrcpb,  thresh,
-     $            iscs)
+      call ATerms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
+     $                nvrsq,  nindxp, lbin,   nrcpb,  thresh,
+     $                iscs)
       call secund(taik2)
       call elapsec(eaik2)
 cc
@@ -449,6 +449,12 @@ C
       iovka=mataddr('Kvo')
       call matdef('tvir','r',nvir,ncf)
       call matpose2('virt','tvir','n')
+
+C Below are for CIM calculation and the equation numbers are from this
+C paper:
+C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
+      call matdef('X1',
+
 cc
       if(iprint.ge.6) then
          if(ncore.gt.0) then
@@ -1670,6 +1676,7 @@ C =====================================================================
       end subroutine BackTrans_CIM
 
 
+C ======================================================================
       subroutine addtoT1_CIM(T,D,DDT,ncf,my,lam)
       implicit real*8(a-h,o-z)
 C
@@ -1732,3 +1739,385 @@ c
       enddo
       end
       
+
+C ======================================================================
+      subroutine Aterms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
+     $                      nvrsq,  nindxp, lbin,   nrcpb,  thresh,
+     $                      iscs)
+
+      use memory
+
+      implicit real*8(a-h,o-z)
+C
+C   Calculation of the matrix A.
+C   A is now calculated by first sorting Tij(ab) to Tab(ij).  This
+C   allows calculating A using matrix multiplication. Since DGEMM is
+C   significantly more efficient that DDOT for large systems this is
+C   worth the extra effort.
+C
+C   Called from mp2_grad
+C
+C   Svein Saebo, Starkville, MS September 2003
+C
+C   Modify the subroutine Aterms and transform one occupied index of T
+C   matrix from QCMO to central LMO.
+C   NZG_6/4/2017 @UARK
+
+c     common /big/bl(30000)
+      parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
+C
+      call secund(taso1)
+      call elapsec(easo1)
+C
+C  reserve memory for one Tij
+c     call getmem(nvrsq/2+1,ibuf)
+      call getint_4(nvrsq,ibuf)
+c     call getmem(nvrsq/8+1,i1)
+      call getint_1(nvrsq,i1)
+C  reserve memory for bins
+c     call getmem(nindxp*lbin,ibins)
+      call getint_4(nindxp*lbin*2,ibins)
+c     call getmem(nindxp*lbin/4+1,i1bin)
+      call getint_1(nindxp*lbin*2,i1bin)
+C
+      call Aphas1(nval,   nvir,   ndisk1, ndisk3, lbin,
+     1            nrcpb,  iprint,bl(ibins),bl(i1bin),bl(ibuf),
+     2            bl(i1))
+      call retmem(4)
+cc
+      if(iprint.ge.2) then
+        call secund(taso2)
+        call elapsec(easo2)
+        write(6,*)' CPU and elapsed time for sort for A-terms:'
+        write(6,100) (taso2-taso1)/60.0d0,(easo2-easo1)/60.0d0
+  100 format(1x,f8.2,' minutes ',f8.2,' minutes ')
+      endif
+C
+C  sort finished - integrals now on <bins> file
+C
+      call matdef('Tab','q',nval,nval)
+      call matdef('Tbar','q',nval,nval)
+      itab=mataddr('Tab')
+      itbar=mataddr('Tbar')
+c     call getmem(lbin,ibin)
+      call getint_4(lbin*2,ibin)
+c     call getmem(lbin/4+1,i1)
+      call getint_1(lbin*2,i1)
+      call CalcA(nval,   nvir,   nrcpb,  ndisk3, lbin,
+     2           thresh, iprint,bl(ibin),bl(i1), bl(itab),
+     1           bl(itbar),iscs)
+      call retmem(2)
+      call matrem('Tbar')
+      call matrem('Tab')
+C
+      return
+      end
+
+
+C======XWYterms_CIM=====================================================
+      subroutine XWYterms_CIM(ncf,    nval,   nvir,   ndisk1, ndisk2,
+     1                        iprint, thresh, tij,    ttilda, ibuf,
+     2                        i1,     gradv,  natoms, lbuf,   i1bin,
+     3                        Kvo,    ncore,  nmo,    iscs)
+C
+C    calculates the A1 and A3 contributions to the MP2 gradients
+C    as well as several contributions to Y
+C
+C    the A1 contributions ( to be contracted with Fx, eq.15a) are the
+C    symmetrical matrices X (eq. 16) and A (eq.18)
+C    the A3 contributions ( to be contracted with Sx, eq.15b) are the
+C    symmetrical matrices W1 (eq.16)  and W2 (eq 17) as well as some
+C    B-type contributons that can be formulated in terms of W, X and
+C    Xp
+C
+C    all matrices are initially generated in (virtual) MO basis, and
+C    transformed to AO basis at the end.
+C    the Tij in virtual basis are on unit ndisk1
+C
+C    finally the 'density matrix' used to generate the Fock-matrix for
+C    the D2-terms (eq 34) , called 'DDT' is constructed.
+C
+C    Svein Saebo, Fayetteville, AR summer 2002
+C
+C   called from mp2grad
+C
+C    arguments:
+C    ncf         number of basis functions
+C    nval        number of correlated orbitals
+C    nvir        number of virtual orbitals
+C    ndisk1      unit for Tij an virtual basis
+C    iprint      print level
+C    thresh      integral threshold, normally 1.0d-09
+C    tij         matrix of dimension nvir*nvir
+C    ttilda      matrix of dimension nvir*nvir
+C    ibuf        integer matrix of dimension nvir*nvir
+C
+
+      use memory
+
+      implicit real*8(a-h,o-z)
+c     common /big/bl(30000)
+      real*8 Kvo(*)
+      dimension tij(*),ttilda(*),gradv(3,natoms)
+      integer*4 ibuf(nvir**2),lbuf(nmo*nvir,2)
+      integer*1 i1(nvir**2),i1bin(nmo*nvir,2)
+      parameter (zero=0.0d0,half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0)
+      parameter (dblmax=2147483648.0d0)
+C
+C   all matrices calculated here : X, W, Aik, should be saved
+C   to be contracted with Fx and Sx later
+C
+C    now calculate matrix X (eq.16) W1 (eq 16) W2 (eq 17) Aik (eq.18)
+C    and Xp (part of B-terms)
+C
+C
+      dblcmp = dblmax*thresh
+c
+      call matdef('Tsum1','q',nvir,nvir)
+      call matzero('Tsum1')
+      call matdef('Tsum2','q',nvir,nvir)
+      call matzero('Tsum2')
+      call matdef('Tsum4','q',nvir,nvir)
+      call matzero('Tsum4')
+      call matdef('TT','q',nvir,nvir)
+      itt=mataddr('TT')
+C
+      iocca=mataddr('eocc')-1         ! address for orbital energies
+C
+C    loop over pairs of occupied orbitals: ij
+      ttkl=zero
+      ij=0
+      NTij=0
+      NKij=0
+c
+      do ii=1,nval
+         oei=bl(iocca+ii)
+         do jj=1,ii
+            ij=ij+1
+            oej=bl(iocca+jj)
+C  read Tij from disk convert to real and put into matrix Tij
+            read(ndisk1,rec=ij) i1,ibuf
+            do imov=1,nvir**2
+c -- decompress the integral ------------------------
+               If (i1(imov).eq.0) Then
+                  xx = ibuf(imov)*thresh
+               Else If(i1(imov).gt.0) Then
+                  xx = ibuf(imov)*thresh
+                  xx = xx + SIGN(i1(imov)*dblcmp,xx)
+               Else
+                  xx = ibuf(imov)*thresh*10.0d0**(-i1(imov))
+                  write(6,*) ' Threshold Tij-imov:',imov,' i1:',i1(imov)
+               EndIf
+c ---------------------------------------------------
+               Tij(imov)=xx
+            enddo
+            call matcopy('Tij','Ttilda')
+            call atoat2(ttilda,nvir,'y',iscs)
+C
+C     atoat generates Tbar (not Ttilda) 'y' means transpose
+C
+C     read virtual-occupied block of Kij for B1-terms
+C
+            read(ndisk2,rec=ij) i1bin,lbuf
+            do imov=1,nvir*nmo
+c -- decompress the integral ------------------------
+               If (i1bin(imov,1).eq.0) Then
+                  xx = lbuf(imov,1)*thresh
+               Else If(i1bin(imov,1).gt.0) Then
+                  xx = lbuf(imov,1)*thresh
+                  xx = xx + SIGN(i1bin(imov,1)*dblcmp,xx)
+               Else
+                  xx = lbuf(imov,1)*thresh*10.0d0**(-i1bin(imov,1))
+cc        write(6,*) ' Threshold Kij - imov:',imov,' i1:',i1bin(imov,1)
+               EndIf
+c ---------------------------------------------------
+               Kvo(imov)=xx
+            enddo
+C
+            call matmmul2('Ttilda','Kvo','B1','n','n','a')
+            If (ii.gt.jj) Then
+               do imov=1,nvir*nmo
+c -- decompress the integral ------------------------
+                  If (i1bin(imov,2).eq.0) Then
+                     xx = lbuf(imov,2)*thresh
+                  Else If(i1bin(imov,2).gt.0) Then
+                     xx = lbuf(imov,2)*thresh
+                     xx = xx + SIGN(i1bin(imov,2)*dblcmp,xx)
+                  Else
+                     xx = lbuf(imov,2)*thresh*10.0d0**(-i1bin(imov,2))
+cc        write(6,*) ' Threshold Kij - imov:',imov,' i1:',i1bin(imov,2)
+                  EndIf
+c ---------------------------------------------------
+                  Kvo(imov)=xx
+               enddo
+               call matmmul2('Ttilda','Kvo','B1','t','n','a')
+            EndIf
+C
+C  finished B1 terms  (nvir,nval)
+C
+            call matmmult('Tij','Ttilda','TT')
+            call matadd('TT','Tsum1')  !  Tsum1=sum Tij*Ttilda+
+            call matadd1('TT',oei+oej,'Tsum4')
+            if (ii.gt.jj) then
+               call matmmul2('Tij','Ttilda','TT','t','t','n')
+               call matadd('TT','Tsum1')  !  Tsum1=sum Tij*Ttilda+
+               call matadd1('TT',oei+oej,'Tsum4')
+            endif
+
+C Collect all the TT matrices into a three-dimensional matrix to do
+C transformation from QCMO to LMO.
+C NZG_6/5/2017 @UARK
+            call collect_tt(nvir,bl(itt),xqcmo(ij,:,:))
+C
+            call matdef('txx','q',nvir,nvir)
+            call matmmult('Tij','evir','txx')
+            call matmmult('txx','Ttilda','TT')
+            call matadd('TT','Tsum2')
+            if (ii.gt.jj) then
+               call matmmul2('Tij','evir','txx','t','n','n')
+               call matmmul2('txx','Ttilda','TT','n','t','n')
+               call matadd('TT','Tsum2')
+            endif
+            call matrem('txx')
+C
+C   form matrix Aik:
+C     C  SS Sept 2033 Aik now calculated with sorted Ts see Aterms
+C     do kk=1,ii
+C     ik=iik+kk
+C     call gettkj(jj,kk,ndisk1,nvrsq,ibuf,
+C    1            mrcpf,bl(itjka),nvir,thresh)
+C  note A(ik)=<Tkj Ttildaji>, Ttildaji in ttilda, Tjk bl(itkja)
+C  <TkjTji> = ddot(TjkTji)
+C
+C     bl(iaika+ik)=bl(iaika+ik) +
+C    1 ddot(nvrsq,bl(itjka),1,ttilda,1)
+C     enddo    !loop over kk
+C
+         enddo    !loop over jj
+      enddo    !loop over ii
+C
+C  Finally transform to AO basis and save
+C
+      call matsimtr('Tsum1','tvir','X')
+      call matsimtr('Tsum2','tvir','W1')
+      call matsimtr('Tsum4','tvir','W2')
+cc
+      if(iprint.ge.3) then
+         call matprint('W1',6)
+         call matprint('W2',6)
+      endif
+
+      allocate(x_LMO(ncen,nval,nvir,nvir))
+      x_LMO=0.0D0
+      do k=1,nvir
+         do l=1,nvir
+            ij=0
+            allocate(xqcmo2(nval,nval))
+            xqcmo2=0.0D0
+            do ii=1,nval
+               do jj=1,ii
+                  ij=ij+1
+                  xqcmo2(ii,jj)=xqcmo(ij,k,l)
+                  if (ii/=jj) xqcmo2(jj,ii)=xqcmo(ij,l,k)
+               enddo
+            enddo
+            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+     &                 nval,xqcmo2,nval,0.0D0,x_LMO(:,:,k,l),ncen)
+            deallocate(xqcmo2)
+         enddo
+      enddo
+
+      call matdef('Xvv','q',nvir,nvir)
+      iXvv=mataddr('Xvv')
+      call X1term_CIM(nvir,bl(iXvv),X1
+      do ii=1,ncen
+         do jj=1,nval
+            Xvv=Xvv+x_LMO(ii,jj,:,:)
+         enddo
+      enddo
+
+      Xao
+C
+C  matrices X, W1 and W2 ready in AO basis , remove matrices
+C  for temorary storage
+C
+      call matrem('TT')
+      call matrem('Tsum4')
+      call matrem('Tsum2')
+      call matrem('Tsum1')
+C
+C  form vector W (ncfxncf)
+C
+C  W=2W1-2W2-2Cv(B1)Co  {-W1SD+W2SD-XFD} {frozen core}
+      call matcopy('W1','W')
+      call matscal('W',two)
+      call matadd1('W2',-two,'W')
+      call matdef('tmw1','q',ncf,ncf)
+C  construct B1 contribution to  W and Y
+      call matdef('tmss02','r',ncf,nmo)
+      call matmmult('virt','B1','tmss02')
+      call matscal('tmss02',two)
+      call matmmul2('tmss02','occa','tmw1','n','t','n')
+C
+C  CvB1 saved in tmss02 for Y-terms
+C
+C  this is the last contribution to W
+      if(iprint.ge.6) call matprint('W',6)
+C     call matpose('tmw1')
+      call matadd1('tmw1',-two,'W')
+cc
+      if(iprint.ge.3) then
+         call matprint('W',6)
+         call matprint('X',6)
+         call matprint('B1',6)
+      endif
+C
+C  this should complete all contributions to W
+C
+C  now add Y-contributions
+C  note that tmss02 has already been multiplied by 2 above
+      call matscal('tmss02',-two)
+C  this makes 4, but 2 according to my notes?
+      call matmmult('ovla','tmss02','Y')
+C  this  is the first contribution to Y :  Y1 = -2(4)SCv(B1)
+      if(iprint.ge.6) call matprint('Y',6)
+      call matrem('tmss02')
+      call matrem('tmw1')
+C
+C  calculate the first term on eq. 33 and add to Y
+      call matdef('CA','r',ncf,nval)
+      call matdef('tmxni','r',ncf,nval)
+      call matmmult('occu','Aik','CA')
+      call matmmult('fock','CA','tmxni')
+      call matscal('tmxni',-four)
+      call matadd('tmxni','Yp')
+      call matrem('tmxni')
+c     call matprint('Y',6)
+C  calculate the "density matrix' DDT=2[X-CAC] to be used for
+C  construction of matrix G(DDT)
+      call matmmul2('CA','occu','DDT','n','t','n')
+      call matadd1('X',-one,'DDT')
+      call matscal('DDT',-two)
+      call matrem('CA')
+C     call matprint('Y',6)
+c
+      return
+      end
+
+
+      subroutine collect_tt(nvir,TT,xqcmo)
+      implicit none
+
+      integer nvir
+      real*8 TT(nvir,nvir),xqcmo(nvir,nvir)
+      
+      xqcmo=TT
+
+      end subroutine collect_tt
+
+
+
+
+
+
+
