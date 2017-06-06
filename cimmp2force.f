@@ -793,6 +793,7 @@ C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
 C      call matcopy('DDT','XF')
       call matcopy('X1','XF')
+      call matscal('XF',two)
       ixadr=mataddr('XF')
 C
 C  add -<X|Fx> to forces:
@@ -803,9 +804,10 @@ C  NOTE only one-electron part left of Fx
 ccNZG
 C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
-         call torque(NAtoms,0,bl(inuc),gradv )
+         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
 C      endif
 C
+      stop
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
 C
@@ -2028,6 +2030,8 @@ cc
                   if (ii/=jj) xqcmo2(jj,ii)=xqcmo(ij,l,k)
                enddo
             enddo
+            write(6,*) "vir index:",k,l
+            write(6,*) xqcmo2
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,xqcmo2,nval,0.0D0,x_LMO(:,:,k,l),ncen)
             deallocate(xqcmo2)
