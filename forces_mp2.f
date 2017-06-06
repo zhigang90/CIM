@@ -894,6 +894,8 @@ C
                call matadd('TT','Tsum1')  !  Tsum1=sum Tij*Ttilda+
                call matadd1('TT',oei+oej,'Tsum4')
             endif
+            write(6,*) "i,j",ii,jj
+            call matprint('TT') 
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
