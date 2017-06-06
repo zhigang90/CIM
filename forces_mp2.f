@@ -3343,7 +3343,7 @@ C
       dimension CT(nval,*),ipoint(*),jpoint(*),schw(ncs,*)
       dimension mapf2s(*)
 C
-      thre1=thresh*0.01D0
+      thre1=thresh
 C  use the normal integral threshold for the time being?
       ipr=0
       jpr=0
