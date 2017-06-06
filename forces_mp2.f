@@ -927,6 +927,7 @@ C
 C  Finally transform to AO basis and save
 C
       call matsimtr('Tsum1','tvir','X')
+      call matprint('X',6)
       call matsimtr('Tsum2','tvir','W1')
       call matsimtr('Tsum4','tvir','W2')
 cc
