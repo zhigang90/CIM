@@ -895,7 +895,7 @@ C
                call matadd1('TT',oei+oej,'Tsum4')
             endif
             write(6,*) "i,j",ii,jj
-            call matprint('TT') 
+            call matprint('TT',6) 
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
