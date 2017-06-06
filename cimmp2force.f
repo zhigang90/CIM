@@ -2022,7 +2022,6 @@ cc
          do l=1,nvir
             ij=0
             allocate(xqcmo2(nval,nval))
-            xqcmo2=0.0D0
             do ii=1,nval
                do jj=1,ii
                   ij=ij+1
@@ -2044,6 +2043,7 @@ cc
       call X1term_CIM(ncen,nval,nvir,bl(iXvv),x_LMO)
       deallocate(x_LMO)
       call matsimtr('Xvv','tvir','X1')
+      call matprint('X1',6)
 C
 C  matrices X, W1 and W2 ready in AO basis , remove matrices
 C  for temorary storage
