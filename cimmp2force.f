@@ -185,7 +185,8 @@ C NZG_5/4/2017 @UARK
       call setival('ldensi',lden)
       
       call NJ_denmat_sym(ncf,ncf,nocc,bl(lvec),bl(lden))
-      call matprint('den0',6)
+C      call matprint('den0',6)
+
 C calculate density matrix from only the central MOs
 C NZG_6/1/2017 @UARK
       call matdef('dencen','s',ncf,ncf)
@@ -193,7 +194,7 @@ C NZG_6/1/2017 @UARK
       call setival('ldencen',ldencen)
 
       call NJ_denmat_sym(ncf,ncf,ncen,Ccen,bl(ldencen))
-      call matprint('dencen',6)
+C      call matprint('dencen',6)
 c  check if the basis set contains L-shells
 c  and if it does then make S,P partitioning
 c
@@ -412,6 +413,12 @@ cc
          write(iout,*) ' Construction of Matrix A:'
          write(iout,100) (taik2-taik1)/sixty,(eaik2-eaik1)/sixty
       endif
+
+
+C Below are for CIM calculation and the equation numbers are from this
+C paper:
+C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
+      call matdef('X1','s',ncf,ncf)   !Eq(17)
 C
 C  the following matrices should be saved to the end
 C  matrix W will be contracted with Sx, and X and Aik
@@ -432,6 +439,7 @@ C     call memory_status('Yp')
       call matdef('X','s',ncf,ncf)
       call matdef('Gmat','s',ncf,ncf)
 
+
 C  the following matrices are used for temporary storage in
 C  XWYterms and can be removed upon exit from this routine
       call matdef('W1','s',ncf,ncf)
@@ -449,11 +457,6 @@ C
       iovka=mataddr('Kvo')
       call matdef('tvir','r',nvir,ncf)
       call matpose2('virt','tvir','n')
-
-C Below are for CIM calculation and the equation numbers are from this
-C paper:
-C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
-      call matdef('X1',
 
 cc
       if(iprint.ge.6) then
@@ -473,10 +476,12 @@ c     call getmem(lbfdim/8+1,i1)
       call mmark
 C  calculate matrices X, W, A, and Y (except D1-terms)
 C  X Eq. 19; A Eq. 21, W Eq. 58 or 60; Y Eq.59 or 61
-      call XWYterms(ncf,    nval,   nvir,   ndisk1, ndisk2,
-     1              iprint, thresh,bl(iatij),bl(ittij),bl(ibuf),
-     2              bl(i1), gradv,  natoms, bl(ibuf),bl(i1),
-     3              bl(iovka),ncore,nmo,    iscs)
+      write(6,*) "before XWYterms"
+      call XWYterms_CIM(ncf,      nval,  nvir,     ndisk1,   ndisk2,
+     1                  iprint,   thresh,bl(iatij),bl(ittij),bl(ibuf),
+     2                  bl(i1),   gradv, natoms,   bl(ibuf), bl(i1),
+     3                  bl(iovka),ncore, nmo,      iscs,     ncen,
+     4                  trans)
       call retmark
       call retmem(2)
 C  remove matrices for temporary storage
@@ -768,14 +773,12 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-C NZG
-C      if(iprint.ge.0) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
+      endif
 
 
-      stop
 C
 C  build gradient vector
 C
@@ -788,7 +791,8 @@ C
 C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
-      call matcopy('DDT','XF')
+C      call matcopy('DDT','XF')
+      call matcopy('X1','XF')
       ixadr=mataddr('XF')
 C
 C  add -<X|Fx> to forces:
@@ -796,11 +800,11 @@ C  NOTE only one-electron part left of Fx
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
-cc
-      if(iprint.ge.2) then
+ccNZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -1713,9 +1717,9 @@ C=============
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
 C NZG
-      DDT=0.0D0
+      DDT=0.0D0;D=0.0D0
  
-      write(6,*) D
+C      write(6,*) D
 
       fact=one4
       if(my.eq.lam) fact=one8
@@ -1818,7 +1822,8 @@ C======XWYterms_CIM=====================================================
       subroutine XWYterms_CIM(ncf,    nval,   nvir,   ndisk1, ndisk2,
      1                        iprint, thresh, tij,    ttilda, ibuf,
      2                        i1,     gradv,  natoms, lbuf,   i1bin,
-     3                        Kvo,    ncore,  nmo,    iscs)
+     3                        Kvo,    ncore,  nmo,    iscs,   ncen,
+     4                        trans)
 C
 C    calculates the A1 and A3 contributions to the MP2 gradients
 C    as well as several contributions to Y
@@ -1857,13 +1862,14 @@ C
 
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
-      real*8 Kvo(*)
+      real*8 Kvo(*),trans(nval,nval)
       dimension tij(*),ttilda(*),gradv(3,natoms)
       integer*4 ibuf(nvir**2),lbuf(nmo*nvir,2)
       integer*1 i1(nvir**2),i1bin(nmo*nvir,2)
       parameter (zero=0.0d0,half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0)
       parameter (dblmax=2147483648.0d0)
 C
+      real*8,allocatable::xqcmo(:,:,:),xqcmo2(:,:),x_LMO(:,:,:,:)
 C   all matrices calculated here : X, W, Aik, should be saved
 C   to be contracted with Fx and Sx later
 C
@@ -1890,6 +1896,7 @@ C    loop over pairs of occupied orbitals: ij
       NTij=0
       NKij=0
 c
+      allocate(xqcmo(nval*(nval+1)/2,nvir,nvir))
       do ii=1,nval
          oei=bl(iocca+ii)
          do jj=1,ii
@@ -2027,20 +2034,17 @@ cc
          enddo
       enddo
 
+      deallocate(xqcmo)
       call matdef('Xvv','q',nvir,nvir)
       iXvv=mataddr('Xvv')
-      call X1term_CIM(nvir,bl(iXvv),X1
-      do ii=1,ncen
-         do jj=1,nval
-            Xvv=Xvv+x_LMO(ii,jj,:,:)
-         enddo
-      enddo
-
-      Xao
+      call X1term_CIM(ncen,nval,nvir,bl(iXvv),x_LMO)
+      deallocate(x_LMO)
+      call matsimtr('Xvv','tvir','X1')
 C
 C  matrices X, W1 and W2 ready in AO basis , remove matrices
 C  for temorary storage
 C
+      call matrem('Xvv')
       call matrem('TT')
       call matrem('Tsum4')
       call matrem('Tsum2')
@@ -2105,6 +2109,7 @@ c
       end
 
 
+C ======================================================================
       subroutine collect_tt(nvir,TT,xqcmo)
       implicit none
 
@@ -2116,8 +2121,18 @@ c
       end subroutine collect_tt
 
 
+C ======================================================================
+      subroutine X1term_CIM(ncen,nval,nvir,Xvv,x_LMO)
+      implicit none
 
+      integer ncen,nval,nvir,ii,jj
+      real*8 Xvv(nvir,nvir),x_LMO(ncen,nval,nvir,nvir)
 
+      do ii=1,ncen
+         do jj=1,nval
+            Xvv=Xvv+x_LMO(ii,jj,:,:)
+         enddo
+      enddo
 
-
+      end subroutine X1term_CIM
 
