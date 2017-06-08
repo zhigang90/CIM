@@ -639,8 +639,10 @@ C  make it quadratic to simplify trace
       call matcopy('DDT','XF')
       ixadr=mataddr('XF')
 
-      call matadd1('X',-two,'XF')
-
+      call matdef('Xq','q',ncf,ncf)
+      call matcopy('X','Xq')
+      call matadd1('Xq',-two,'XF')
+      call matrem('Xq')
 
 
 
@@ -894,8 +896,8 @@ C
                call matadd('TT','Tsum1')  !  Tsum1=sum Tij*Ttilda+
                call matadd1('TT',oei+oej,'Tsum4')
             endif
-            write(6,*) "i,j",ii,jj
-            call matprint('TT',6) 
+C            write(6,*) "i,j",ii,jj
+C            call matprint('TT',6) 
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
@@ -3130,7 +3132,7 @@ C=============
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 C NZG
       T=0.0D0
-      write(6,*) D
+C      write(6,*) D
 C NZG
       fact=one4
       if(my.eq.lam) fact=one8
