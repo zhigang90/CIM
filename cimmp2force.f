@@ -32,8 +32,7 @@ c
       parameter (idft=0)
 
       dimension trans(nmo,nmo)
-      integer iatom(natom)
-      integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:)
+      integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:),iatom(:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
       real*8,allocatable::tmp(:),SOVER(:,:),Ccen(:,:),Ccen1(:,:)
       character*8,allocatable::AtSymb(:)
@@ -86,7 +85,7 @@ C  Fock matrix should be read from the XXX.cim file
       open(unit=iunit,file=jobname(1:lenJ)//'.cim',form='formatted',
      &     status='old')
       LF2=ncf*(ncf+1)/2
-      allocate(dtmp(LF2),Fock1(ncf,ncf))
+      allocate(dtmp(LF2),Fock1(ncf,ncf),iatom(natom))
       call rread8(iunit,'$AO-FOCK-A',LF2,dtmp(1))
       call iread8(iunit,'$ATOMS',natom,iatom(1))
       call FockFull(ncf,LF2,dtmp,Fock1)
@@ -1671,13 +1670,15 @@ C =====================================================================
       integer ncf,nval,ncen
       real*8 Tlq(ncen,nval),Tmnao(ncf,ncf)
       real*8 Ccen(ncf,ncen),Cqcmo(ncf,nval),CqcmoT(nval,ncf)
-      real*8 temp(ncen,ncf)
+      real*8,allocatable::temp(:,:)
 
+      allocate(temp(ncen,ncf))
       CqcmoT=transpose(Cqcmo)
       temp=0.0D0
       call matmul_mkl(Tlq,CqcmoT,temp,ncen,nval,ncf)
       Tmnao=0.0D0
       call matmul_mkl(Ccen,temp,Tmnao,ncf,ncen,ncf)
+      deallocate(temp)
 
       end subroutine BackTrans_CIM
 
@@ -1871,7 +1872,9 @@ c     common /big/bl(30000)
       parameter (zero=0.0d0,half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0)
       parameter (dblmax=2147483648.0d0)
 C
-      real*8,allocatable::xqcmo(:,:,:),xqcmo2(:,:),x_LMO(:,:,:,:)
+      real*8,allocatable::Tqcmo(:,:,:),Tqcmo2(:,:),T_LMO(:,:,:,:)
+      real*8,allocatable::Ttilqcmo(:,:,:),Ttilqcmo2(:,:)
+      real*8,allocatable::Ttil_LMO(:,:,:,:)
 C   all matrices calculated here : X, W, Aik, should be saved
 C   to be contracted with Fx and Sx later
 C
@@ -1889,6 +1892,8 @@ c
       call matzero('Tsum4')
       call matdef('TT','q',nvir,nvir)
       itt=mataddr('TT')
+      itij=mataddr('Tij')
+      ittilda=mataddr('Ttilda')
 C
       iocca=mataddr('eocc')-1         ! address for orbital energies
 C
@@ -1898,7 +1903,8 @@ C    loop over pairs of occupied orbitals: ij
       NTij=0
       NKij=0
 c
-      allocate(xqcmo(nval*(nval+1)/2,nvir,nvir))
+      allocate(Tqcmo(nval*(nval+1)/2,nvir,nvir))
+      allocate(Ttilqcmo(nval*(nval+1)/2,nvir,nvir))
       do ii=1,nval
          oei=bl(iocca+ii)
          do jj=1,ii
@@ -1976,7 +1982,8 @@ C
 C Collect all the TT matrices into a three-dimensional matrix to do
 C transformation from QCMO to LMO.
 C NZG_6/5/2017 @UARK
-            call collect_tt(nvir,bl(itt),xqcmo(ij,:,:))
+            call matcollect(nvir,bl(itij),Tqcmo(ij,:,:))
+            call matcollect(nvir,bl(ittilda),Ttilqcmo(ij,:,:))
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
@@ -2016,32 +2023,37 @@ cc
          call matprint('W2',6)
       endif
 
-      allocate(x_LMO(ncen,nval,nvir,nvir))
-      x_LMO=0.0D0
+      allocate(T_LMO(ncen,nval,nvir,nvir))
+      allocate(Ttil_LMO(ncen,nval,nvir,nvir))
+      T_LMO=0.0D0; Ttil_LMO=0.0D0
       do k=1,nvir
          do l=1,nvir
             ij=0
-            allocate(xqcmo2(nval,nval))
+            allocate(Tqcmo2(nval,nval),Ttilqcmo2(nval,nval))
             do ii=1,nval
                do jj=1,ii
                   ij=ij+1
-                  xqcmo2(ii,jj)=xqcmo(ij,k,l)
-                  if (ii/=jj) xqcmo2(jj,ii)=xqcmo(ij,l,k)
+                  Tqcmo2(ii,jj)=Tqcmo(ij,l,k)
+                  Ttilqcmo2(ii,jj)=Ttilqcmo(ij,l,k)
+                  if (ii/=jj) then
+                     Tqcmo2(jj,ii)=Tqcmo(ij,k,l)
+                     Ttilqcmo2(jj,ii)=Ttilqcmo(ij,k,l)
+                  endif
                enddo
             enddo
-            write(6,*) "vir index:",k,l
-            write(6,*) xqcmo2
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
-     &                 nval,xqcmo2,nval,0.0D0,x_LMO(:,:,k,l),ncen)
-            deallocate(xqcmo2)
+     &                 nval,Tqcmo2,nval,0.0D0,T_LMO(:,:,l,k),ncen)
+            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+     &                 nval,Ttilqcmo2,nval,0.0D0,Ttil_LMO(:,:,l,k),ncen)
+            deallocate(Tqcmo2,Ttilqcmo2)
          enddo
       enddo
 
-      deallocate(xqcmo)
+      deallocate(Tqcmo,Ttilqcmo)
       call matdef('Xvv','q',nvir,nvir)
       iXvv=mataddr('Xvv')
-      call X1term_CIM(ncen,nval,nvir,bl(iXvv),x_LMO)
-      deallocate(x_LMO)
+      call X1term_CIM(ncen,nval,nvir,bl(iXvv),T_LMO,Ttil_LMO)
+      deallocate(T_LMO,Ttil_LMO)
       call matsimtr('Xvv','tvir','X1')
       call matprint('X1',6)
 C
@@ -2114,7 +2126,7 @@ c
 
 
 C ======================================================================
-      subroutine collect_tt(nvir,TT,xqcmo)
+      subroutine matcollect(nvir,TT,xqcmo)
       implicit none
 
       integer nvir
@@ -2122,21 +2134,29 @@ C ======================================================================
       
       xqcmo=TT
 
-      end subroutine collect_tt
+      end subroutine matcollect
 
 
 C ======================================================================
-      subroutine X1term_CIM(ncen,nval,nvir,Xvv,x_LMO)
+      subroutine X1term_CIM(ncen,nval,nvir,Xvv,T_LMO,Ttil_LMO)
       implicit none
 
       integer ncen,nval,nvir,ii,jj
-      real*8 Xvv(nvir,nvir),x_LMO(ncen,nval,nvir,nvir)
+      real*8 Xvv(nvir,nvir),T_LMO(ncen,nval,nvir,nvir)
+      real*8 Ttil_LMO(ncen,nval,nvir,nvir)
+      real*8,allocatable::tmp(:,:)
 
+      allocate(tmp(nvir,nvir))
+      Xvv=0.0D0
       do ii=1,ncen
          do jj=1,nval
-            Xvv=Xvv+x_LMO(ii,jj,:,:)
+            tmp=0.0D0
+            call matmul_mkl(Ttil_LMO(ii,jj,:,:),T_LMO(ii,jj,:,:),tmp,
+     &                      nvir,nvir,nvir)
+            Xvv=Xvv+tmp
          enddo
       enddo
+      deallocate(tmp)
 
       end subroutine X1term_CIM
 
