@@ -1669,10 +1669,10 @@ C =====================================================================
 
       integer ncf,nval,ncen
       real*8 Tlq(ncen,nval),Tmnao(ncf,ncf)
-      real*8 Ccen(ncf,ncen),Cqcmo(ncf,nval),CqcmoT(nval,ncf)
-      real*8,allocatable::temp(:,:)
+      real*8 Ccen(ncf,ncen),Cqcmo(ncf,nval)
+      real*8,allocatable::temp(:,:),CqcmoT(:,:)
 
-      allocate(temp(ncen,ncf))
+      allocate(temp(ncen,ncf),CqcmoT(nval,ncf))
       CqcmoT=transpose(Cqcmo)
       temp=0.0D0
       call matmul_mkl(Tlq,CqcmoT,temp,ncen,nval,ncf)
