@@ -280,6 +280,9 @@ C  Zhigang_3/31/2017 @UARK
 C  Change the last parameter from ncf to nvir+nmo
 C  There was some problem with the dimension of evir when ncf/=nmo+nvir
 C      call matsub('evir','epsi',nmo+1,ncf)
+C NZG
+      call matdef('Xq','q',ncf,ncf)
+C NZG
       call matsub('evir','epsi',nmo+1,nvir+nmo) !NZG_3/31/2017
       call matsub('eocc','epsi',ncore+1,nmo)
       call matdef('Y','r',ncf,nmo)
@@ -639,10 +642,8 @@ C  make it quadratic to simplify trace
       call matcopy('DDT','XF')
       ixadr=mataddr('XF')
 
-      call matdef('Xq','q',ncf,ncf)
-      call matcopy('X','Xq')
       call matadd1('Xq',-two,'XF')
-      call matrem('Xq')
+C      call matrem('Xq')
 
 
 
@@ -929,6 +930,7 @@ C
 C  Finally transform to AO basis and save
 C
       call matsimtr('Tsum1','tvir','X')
+      call matcopy('X','Xq')
       call matprint('X',6)
       call matsimtr('Tsum2','tvir','W1')
       call matsimtr('Tsum4','tvir','W2')
