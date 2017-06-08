@@ -772,10 +772,10 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-      if(iprint.ge.2) then
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
 
 
 C
