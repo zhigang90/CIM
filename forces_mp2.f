@@ -642,6 +642,7 @@ C  make it quadratic to simplify trace
       call matcopy('DDT','XF')
       ixadr=mataddr('XF')
 
+      call matprint('Xq',6)
       call matadd1('Xq',-two,'XF')
 C      call matrem('Xq')
 
