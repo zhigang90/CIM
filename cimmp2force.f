@@ -402,6 +402,7 @@ C  Calculate Matrix A
       call elapsec(eaik1)
       call matdef('Aik','s',nval,nval)
       call matzero('Aik')
+C For CIM
       call ATerms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
      $                nvrsq,  nindxp, lbin,   nrcpb,  thresh,
      $                iscs)
