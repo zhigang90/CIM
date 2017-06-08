@@ -646,7 +646,7 @@ C  make it quadratic to simplify trace
       call matadd1('Xq',-two,'XF')
 C      call matrem('Xq')
 
-
+      call matprint('fxsx',6)
 
 C
 C  add -<X|Fx> to forces:
