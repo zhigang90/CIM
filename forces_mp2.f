@@ -646,8 +646,6 @@ C  make it quadratic to simplify trace
       call matadd1('Xq',-two,'XF')
 C      call matrem('Xq')
 
-      call matprint('fxsx',6)
-
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
@@ -2542,6 +2540,8 @@ C trace.
       nqd=ncf*ncf
       do iat=1,natoms
          read(unit=iunfs,rec=iat)FXSX
+C NZG
+C         call matprint('fxsx',6)
 C     do ixyz=1,3
          call matcopy('fxsx','fxq')
          gradv(1,iat)=gradv(1,iat) -
