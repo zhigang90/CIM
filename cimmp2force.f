@@ -397,6 +397,14 @@ C  Calculate Matrix A
       call ATerms(nval,   nvir,   ndisk1, ndisk3, iprint,
      $            nvrsq,  nindxp, lbin,   nrcpb,  thresh,
      $            iscs)
+
+C  Transform the first index from QCMO to LMO. Only to central LMOs.
+      call matdef('Acen','r',ncen,nval)
+      call matdef('Afull','q',nval,nval)
+      call matcopy('Aik','Afull')
+      ia=mataddr('Afull')
+      iacen=mataddr('Acen')
+      call TQtoL(bl(ia),bl(iacen),trans,ncen,nval)
       call secund(taik2)
       call elapsec(eaik2)
 cc
