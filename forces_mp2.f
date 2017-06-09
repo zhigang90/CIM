@@ -985,6 +985,8 @@ c     call matprint('Y',6)
 C  calculate the "density matrix' DDT=2[X-CAC] to be used for
 C  construction of matrix G(DDT)
       call matmmul2('CA','occu','DDT','n','t','n')
+C NZG
+      call matprint('DDT',6)
       call matadd1('X',-one,'DDT')
       call matscal('DDT',-two)
       call matrem('CA')
@@ -2526,8 +2528,6 @@ C trace.
       do iat=1,natoms
          read(unit=iunfs,rec=iat)FXSX
 C     do ixyz=1,3
-C NZG
-         call matprint('fxsx',6)
          call matcopy('fxsx','fxq')
          gradv(1,iat)=gradv(1,iat) -
      1                ddot(nqd,bl(ifxq),1,WX,1)
