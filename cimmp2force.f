@@ -402,9 +402,27 @@ C  Calculate Matrix A
       call elapsec(eaik1)
       call matdef('Aik','s',nval,nval)
       call matzero('Aik')
-      call ATerms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
-     $                nvrsq,  nindxp, lbin,   nrcpb,  thresh,
-     $                iscs)
+      call ATerms(nval,   nvir,   ndisk1, ndisk3, iprint,
+     $            nvrsq,  nindxp, lbin,   nrcpb,  thresh,
+     $            iscs)
+
+C  Transform the first index from QCMO to LMO. Only to central LMOs.
+      call matdef('Alq','r',ncen,nval)
+      call matdef('Afull','q',nval,nval)
+      call matcopy('Aik','Afull')
+      ia=mataddr('Afull')
+      ialq=mataddr('Alq')
+      call TQtoL(bl(ia),bl(ialq),trans,ncen,nval)
+      call matrem('Afull')
+
+C  X2=Ccen Alq CoT !CoT is transpose of Co || This is the second term of
+C  Eq(19)
+      call matdef('X2','q',ncf,ncf)
+      ix2=mataddr('X2')
+      ioccu=mataddr('occu')
+      call BackTrans_CIM(bl(ialq),bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
+
+      call matprint('X2',6)
       call secund(taik2)
       call elapsec(eaik2)
 cc
@@ -413,11 +431,13 @@ cc
          write(iout,100) (taik2-taik1)/sixty,(eaik2-eaik1)/sixty
       endif
 
-
 C Below are for CIM calculation and the equation numbers are from this
 C paper:
 C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
       call matdef('X1','s',ncf,ncf)   !Eq(17)
+      call matdef('EW1','s',ncf,ncf)  !First term in Eq(20)
+      call matdef('EW2','s',ncf,ncf)  !Second term in Eq(20)
+
 C
 C  the following matrices should be saved to the end
 C  matrix W will be contracted with Sx, and X and Aik
@@ -475,12 +495,11 @@ c     call getmem(lbfdim/8+1,i1)
       call mmark
 C  calculate matrices X, W, A, and Y (except D1-terms)
 C  X Eq. 19; A Eq. 21, W Eq. 58 or 60; Y Eq.59 or 61
-      write(6,*) "before XWYterms"
       call XWYterms_CIM(ncf,      nval,  nvir,     ndisk1,   ndisk2,
      1                  iprint,   thresh,bl(iatij),bl(ittij),bl(ibuf),
      2                  bl(i1),   gradv, natoms,   bl(ibuf), bl(i1),
      3                  bl(iovka),ncore, nmo,      iscs,     ncen,
-     4                  trans)
+     4                  trans,    Ccen)
       call retmark
       call retmem(2)
 C  remove matrices for temporary storage
@@ -1828,7 +1847,7 @@ C======XWYterms_CIM=====================================================
      1                        iprint, thresh, tij,    ttilda, ibuf,
      2                        i1,     gradv,  natoms, lbuf,   i1bin,
      3                        Kvo,    ncore,  nmo,    iscs,   ncen,
-     4                        trans)
+     4                        trans,  Ccen)
 C
 C    calculates the A1 and A3 contributions to the MP2 gradients
 C    as well as several contributions to Y
@@ -1868,15 +1887,19 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
       real*8 Kvo(*),trans(nval,nval)
-      dimension tij(*),ttilda(*),gradv(3,natoms)
+      dimension tij(*),ttilda(*),gradv(3,natoms),Ccen(ncf,ncen)
       integer*4 ibuf(nvir**2),lbuf(nmo*nvir,2)
       integer*1 i1(nvir**2),i1bin(nmo*nvir,2)
       parameter (zero=0.0d0,half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0)
       parameter (dblmax=2147483648.0d0)
 C
-      real*8,allocatable::Tqcmo(:,:,:),Tqcmo2(:,:),T_LMO(:,:,:,:)
+      real*8,allocatable::Tqcmo(:,:,:),Tqcmo2(:,:),T4qcmo2(:,:)
       real*8,allocatable::Ttilqcmo(:,:,:),Ttilqcmo2(:,:)
+      real*8,allocatable::T_LMO(:,:,:,:),T4_LMO(:,:,:,:)
       real*8,allocatable::Ttil_LMO(:,:,:,:)
+C   Here some of the names contain '4'. Actually it is from the name
+C   Tsum4. So I also use '4' in the names. -NZG_6/9/2017
+
 C   all matrices calculated here : X, W, Aik, should be saved
 C   to be contracted with Fx and Sx later
 C
@@ -1984,8 +2007,9 @@ C
 C Collect all the TT matrices into a three-dimensional matrix to do
 C transformation from QCMO to LMO.
 C NZG_6/5/2017 @UARK
-            call matcollect(nvir,bl(itij),Tqcmo(ij,:,:))
-            call matcollect(nvir,bl(ittilda),Ttilqcmo(ij,:,:))
+            call matcollect(nvir,nvir,bl(itij),Tqcmo(ij,:,:))
+            call matcollect(nvir,nvir,bl(ittilda),Ttilqcmo(ij,:,:))
+C            call matcollect(nvir,nval,
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
@@ -2025,21 +2049,26 @@ cc
          call matprint('W2',6)
       endif
 
-      allocate(T_LMO(ncen,nval,nvir,nvir))
+      allocate(T_LMO(ncen,nval,nvir,nvir),T4_LMO(ncen,nval,nvir,nvir))
       allocate(Ttil_LMO(ncen,nval,nvir,nvir))
       T_LMO=0.0D0; Ttil_LMO=0.0D0
       do k=1,nvir
          do l=1,nvir
             ij=0
             allocate(Tqcmo2(nval,nval),Ttilqcmo2(nval,nval))
+            allocate(T4qcmo2(nval,nval))
             do ii=1,nval
+               oei=bl(iocca+ii)
                do jj=1,ii
+                  oej=bl(iocca+jj)
                   ij=ij+1
                   Tqcmo2(ii,jj)=Tqcmo(ij,l,k)
                   Ttilqcmo2(ii,jj)=Ttilqcmo(ij,l,k)
+                  T4qcmo2(ii,jj)=(oei+oej)*Tqcmo2(ii,jj)
                   if (ii/=jj) then
                      Tqcmo2(jj,ii)=Tqcmo(ij,k,l)
                      Ttilqcmo2(jj,ii)=Ttilqcmo(ij,k,l)
+                     T4qcmo2(jj,ii)=(oei+oej)*Tqcmo2(jj,ii)
                   endif
                enddo
             enddo
@@ -2047,21 +2076,40 @@ cc
      &                 nval,Tqcmo2,nval,0.0D0,T_LMO(:,:,l,k),ncen)
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,Ttilqcmo2,nval,0.0D0,Ttil_LMO(:,:,l,k),ncen)
-            deallocate(Tqcmo2,Ttilqcmo2)
+            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+     &                 nval,T4qcmo2,nval,0.0D0,T4_LMO(:,:,l,k),ncen)
+            deallocate(Tqcmo2,Ttilqcmo2,T4qcmo2)
          enddo
       enddo
 
       deallocate(Tqcmo,Ttilqcmo)
       call matdef('Xvv','q',nvir,nvir)
       iXvv=mataddr('Xvv')
+      call matdef('EW2vv','q',nvir,nvir)
+      iEW2vv=mataddr('EW2vv')
       call X1term_CIM(ncen,nval,nvir,bl(iXvv),T_LMO,Ttil_LMO)
-      deallocate(T_LMO,Ttil_LMO)
+      call X1term_CIM(ncen,nval,nvir,bl(iEW2vv),T4_LMO,Ttil_LMO)
+      call matdef('EW1vv','q',nvir,nvir)
+      iEW1vv=mataddr('EW1vv')
+      call matdef('Fockv','q',nvir,nvir)
+      call matcopy('evir','Fockv')
+      iFockv=mataddr('Fockv')
+      call W1term_CIM(ncen,nval,nvir,bl(iEW1vv),T_LMO,Ttil_LMO,
+     &                bl(iFockv))
+      deallocate(T_LMO,Ttil_LMO,T4_LMO)
       call matsimtr('Xvv','tvir','X1')
+      call matsimtr('EW1vv','tvir','EW1')
+      call matsimtr('EW2vv','tvir','EW2')
       call matprint('X1',6)
+      call matprint('EW1',6)
+      call matprint('EW2',6)
 C
 C  matrices X, W1 and W2 ready in AO basis , remove matrices
 C  for temorary storage
 C
+      call matrem('Fockv')
+      call matrem('EW1vv')
+      call matrem('EW2vv')
       call matrem('Xvv')
       call matrem('TT')
       call matrem('Tsum4')
@@ -2128,11 +2176,11 @@ c
 
 
 C ======================================================================
-      subroutine matcollect(nvir,TT,xqcmo)
+      subroutine matcollect(nvir,nmo,TT,xqcmo)
       implicit none
 
       integer nvir
-      real*8 TT(nvir,nvir),xqcmo(nvir,nvir)
+      real*8 TT(nvir,nmo),xqcmo(nvir,nmo)
       
       xqcmo=TT
 
@@ -2142,6 +2190,9 @@ C ======================================================================
 C ======================================================================
       subroutine X1term_CIM(ncen,nval,nvir,Xvv,T_LMO,Ttil_LMO)
       implicit none
+
+C this routine calculates X1 and W2 terms in CIM force calculation.
+C Eq(17) and second term in Eq(20) or Eq(32)
 
       integer ncen,nval,nvir,ii,jj
       real*8 Xvv(nvir,nvir),T_LMO(ncen,nval,nvir,nvir)
@@ -2162,3 +2213,34 @@ C ======================================================================
 
       end subroutine X1term_CIM
 
+
+C ======================================================================
+      subroutine W1term_CIM(ncen,nval,nvir,Xvv,T_LMO,Ttil_LMO,Fockv)
+      implicit none
+
+C this routine calculates W1 term in CIM force calculation.
+C First term in Eq(20) and Eq(32)
+
+      integer ncen,nval,nvir,i,j,k,l
+      real*8 Xvv(nvir,nvir),T_LMO(ncen,nval,nvir,nvir)
+      real*8 Ttil_LMO(ncen,nval,nvir,nvir),Fockv(nvir,nvir)
+      real*8,allocatable::tmp(:,:)
+
+      allocate(tmp(nvir,nvir))
+      Xvv=0.0D0
+      do i=1,ncen
+         do j=1,nval
+            tmp=0.0D0
+            do k=1,nvir
+               do l=1,nvir
+                  Ttil_LMO(i,j,k,l)=Ttil_LMO(i,j,k,l)*Fockv(l,l)
+               enddo
+            enddo
+            call matmul_mkl(Ttil_LMO(i,j,:,:),T_LMO(i,j,:,:),tmp,
+     &                      nvir,nvir,nvir)
+            Xvv=Xvv+tmp
+         enddo
+      enddo
+      deallocate(tmp)
+
+      end subroutine W1term_CIM
