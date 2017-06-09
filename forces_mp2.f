@@ -2526,6 +2526,8 @@ C trace.
       do iat=1,natoms
          read(unit=iunfs,rec=iat)FXSX
 C     do ixyz=1,3
+C NZG
+         call matprint('fxsx',6)
          call matcopy('fxsx','fxq')
          gradv(1,iat)=gradv(1,iat) -
      1                ddot(nqd,bl(ifxq),1,WX,1)
