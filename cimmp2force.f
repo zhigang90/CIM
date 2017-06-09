@@ -796,6 +796,7 @@ C      call matcopy('DDT','XF')
       ixadr=mataddr('XF')
 
       call matprint('XF',6)
+      call matprint('fxsx',6)
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
