@@ -133,7 +133,7 @@ C      integer,allocatable::SYS_ini(:,:),SYS_orb(:,:)
 C      character*4::ENTYP   
 
 
-      parameter (nopt=13)
+      parameter (nopt=14)
       integer nsh,nprint,nbas,NATOM,ncore
       integer nmo,nalpha,nbeta,ierr,nfocc,np,jerr,debug,nocc
       integer ioptyp(nopt)
@@ -188,17 +188,20 @@ C NZG_4/7/2017 @UARK
 C Failed finally.... Zhigang 4/19/2017 @UARK
       logical fpao,cpao
 
+C Add none frozen core option for none frozen core calculation
+      logical nofrozen
+
 c-----------------------------------------------------------------------
 c 0=logical option, 1=a single integer, 2=two integers, 3=three integers
 c 11=a single real, 12=two reals, 13=three reals, 21=a character option
 c-----------------------------------------------------------------------
       data ioptyp  / 1,     11,    21,    11,    21,    21,    0,
-     &               21,    11,    21,    0,     0,     0  /
+     &               21,    11,    21,    0,     0,     0,     0  /
 
 C                    1      11     21     11     21     21     0
       data word    /'prin','disl','subm','virt','moty','acti','comb',
-C                    21     11     21     0      0      0
-     &              'hmtd','hdis','hatm','fpao','cpao','forc' /
+C                    21     11     21     0      0      0      0
+     &              'hmtd','hdis','hatm','fpao','cpao','forc','nofr' /
       data IUnit   /1/ ! unit number for checkpoint I/O
       data methods /'RIMP2  ','MP2    ','CCD    ','CCSD   ','CCSD(T)'/
       common /job/ jobname,lenJ
@@ -240,6 +243,7 @@ C NZG_10/6/2016 @NJU
       cpao=.false.
 
       calforce=.false.
+      nofrozen=.false.
 
       call readopt(inp,nopt,word,ioptyp,iopv,ropv,chopv,ifound)
       if (ifound(1).gt.0) nprint=iopv(1,1)
@@ -249,6 +253,7 @@ C NZG_10/6/2016 @NJU
       if (ifound(4).gt.0) virt=ropv(1,4)
       if (ifound(5).gt.0) motype=chopv(5)
       if (ifound(13).gt.0) calforce2=.true.
+      if (ifound(14).gt.0) nofrozen=.true.
 C !!!!!!!!!!!!!!!!!!!!!!!Caution!!!!!!!!!!!!!!!!!
 C Consider the core orbitals later
       calforce=.false.
@@ -469,17 +474,21 @@ C      write(6,*) density
       end do
       CALL ReorderFock(nbas,nbas,Z(i1),FKW,FK)
 
-      call FRZORB(nprint,NATOM,IAN,ncoreocc)
+      if (nofrozen) then
+         nfocc=0
+      else
+         call FRZORB(nprint,NATOM,IAN,nfocc)
+      endif
 
 C If CIM-MP2 gradient is to be calculated, we need the information of
 C core orbitals. In this case, set nfocc as zero. It doesn't mean the
 C number of frozen core orbitals is zero.
 C NZG_4/27/2017 @UARK
-      if (calforce) then
-         nfocc=0
-      else
-         nfocc=ncoreocc
-      endif
+C      if (calforce) then
+C         nfocc=0
+C      else
+C         nfocc=ncoreocc
+C      endif
       nvalocc=nocc-nfocc
 
       write(iout,"(' NUMBER OF BASIS FUNCTIONS:',i5)") NBAS
