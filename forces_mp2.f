@@ -985,8 +985,6 @@ c     call matprint('Y',6)
 C  calculate the "density matrix' DDT=2[X-CAC] to be used for
 C  construction of matrix G(DDT)
       call matmmul2('CA','occu','DDT','n','t','n')
-C NZG
-      call matprint('DDT',6)
       call matadd1('X',-one,'DDT')
       call matscal('DDT',-two)
       call matrem('CA')
@@ -1201,8 +1199,6 @@ C
             read(ndisk1,rec=iijj) int1,ibuf
             call secund(ttx)
             call elapsec(etx)
-C NZG
-C            write(6,*) "ii jj",ii,jj
             call transAO(ncf,nvir,bl(imao),bl(immo),ibuf,
      1                   int1,jbuf,jnt1,thresh)
             call secund(tty)
@@ -1463,15 +1459,9 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-C NZG
-C                  call matzero('TAO')
-C NZG
                   call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
-C NZG
-C                  call zeroit(bl(itadr),mylsize)
-C NZF
                   call secund(ttbt3)
                   ttbad=ttbad+ttbt3-ttbt2
                   numt=numt+1
@@ -3118,9 +3108,7 @@ C
 C=============
       dimension T(ncf,ncf),D(ncf,*),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
-C NZG
-C      T=0.0D0
-C NZG
+
       fact=one4
       if(my.eq.lam) fact=one8
       dml=D(my,lam)*half*fact+DDT(my,lam)*one8
