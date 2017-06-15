@@ -422,7 +422,6 @@ C  Eq(19)
       ioccu=mataddr('occu')
       call BackTrans_CIM(bl(ialq),bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
 
-      call matprint('X2',6)
       call secund(taik2)
       call elapsec(eaik2)
 cc
@@ -435,8 +434,10 @@ C Below are for CIM calculation and the equation numbers are from this
 C paper:
 C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
       call matdef('X1','s',ncf,ncf)   !Eq(17)
-      call matdef('EW1','s',ncf,ncf)  !First term in Eq(20)
-      call matdef('EW2','s',ncf,ncf)  !Second term in Eq(20)
+      call matdef('CIMW1','s',ncf,ncf)  !First term in Eq(20)
+      call matdef('CIMW2','s',ncf,ncf)  !Second term in Eq(20)
+      call matdef('TK','r',nvir,nmo)
+      call matdef('CIMW','q',ncf,ncf)
 
 C
 C  the following matrices should be saved to the end
@@ -1897,6 +1898,7 @@ C
       real*8,allocatable::Ttilqcmo(:,:,:),Ttilqcmo2(:,:)
       real*8,allocatable::T_LMO(:,:,:,:),T4_LMO(:,:,:,:)
       real*8,allocatable::Ttil_LMO(:,:,:,:)
+      real*8,allocatable::Kqcmo(:,:,:,:),K_LMO(:,:,:,:)
 C   Here some of the names contain '4'. Actually it is from the name
 C   Tsum4. So I also use '4' in the names. -NZG_6/9/2017
 
@@ -1919,6 +1921,7 @@ c
       itt=mataddr('TT')
       itij=mataddr('Tij')
       ittilda=mataddr('Ttilda')
+      ikvo=mataddr('Kvo')
 C
       iocca=mataddr('eocc')-1         ! address for orbital energies
 C
@@ -1930,6 +1933,7 @@ C    loop over pairs of occupied orbitals: ij
 c
       allocate(Tqcmo(nval*(nval+1)/2,nvir,nvir))
       allocate(Ttilqcmo(nval*(nval+1)/2,nvir,nvir))
+      allocate(Kqcmo(nval,nval,nvir,nmo))
       do ii=1,nval
          oei=bl(iocca+ii)
          do jj=1,ii
@@ -1974,6 +1978,7 @@ c ---------------------------------------------------
                Kvo(imov)=xx
             enddo
 C
+            call matcollect(nvir,nmo,bl(ikvo),Kqcmo(ii,jj,:,:))
             call matmmul2('Ttilda','Kvo','B1','n','n','a')
             If (ii.gt.jj) Then
                do imov=1,nvir*nmo
@@ -1990,6 +1995,7 @@ cc        write(6,*) ' Threshold Kij - imov:',imov,' i1:',i1bin(imov,2)
 c ---------------------------------------------------
                   Kvo(imov)=xx
                enddo
+               call matcollect(nvir,nmo,bl(ikvo),Kqcmo(jj,ii,:,:))
                call matmmul2('Ttilda','Kvo','B1','t','n','a')
             EndIf
 C
@@ -2009,7 +2015,6 @@ C transformation from QCMO to LMO.
 C NZG_6/5/2017 @UARK
             call matcollect(nvir,nvir,bl(itij),Tqcmo(ij,:,:))
             call matcollect(nvir,nvir,bl(ittilda),Ttilqcmo(ij,:,:))
-C            call matcollect(nvir,nval,
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
@@ -2051,6 +2056,7 @@ cc
 
       allocate(T_LMO(ncen,nval,nvir,nvir),T4_LMO(ncen,nval,nvir,nvir))
       allocate(Ttil_LMO(ncen,nval,nvir,nvir))
+      allocate(K_LMO(ncen,nval,nvir,nmo))
       T_LMO=0.0D0; Ttil_LMO=0.0D0
       do k=1,nvir
          do l=1,nvir
@@ -2081,14 +2087,24 @@ cc
             deallocate(Tqcmo2,Ttilqcmo2,T4qcmo2)
          enddo
       enddo
-
       deallocate(Tqcmo,Ttilqcmo)
+
+      do k=1,nmo
+         do l=1,nvir
+            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+     &           nval,Kqcmo(:,:,l,k),nval,0.0D0,K_LMO(:,:,l,k),ncen)
+         enddo
+      enddo
+      deallocate(Kqcmo)
+      
       call matdef('Xvv','q',nvir,nvir)
       iXvv=mataddr('Xvv')
       call matdef('EW2vv','q',nvir,nvir)
       iEW2vv=mataddr('EW2vv')
+      iTK=mataddr('TK')
       call X1term_CIM(ncen,nval,nvir,bl(iXvv),T_LMO,Ttil_LMO)
       call X1term_CIM(ncen,nval,nvir,bl(iEW2vv),T4_LMO,Ttil_LMO)
+      call TKterm_CIM(ncen,nval,nvir,nmo,bl(iTK),Ttil_LMO,K_LMO)
       call matdef('EW1vv','q',nvir,nvir)
       iEW1vv=mataddr('EW1vv')
       call matdef('Fockv','q',nvir,nvir)
@@ -2096,13 +2112,13 @@ cc
       iFockv=mataddr('Fockv')
       call W1term_CIM(ncen,nval,nvir,bl(iEW1vv),T_LMO,Ttil_LMO,
      &                bl(iFockv))
-      deallocate(T_LMO,Ttil_LMO,T4_LMO)
+      deallocate(T_LMO,Ttil_LMO,T4_LMO,K_LMO)
       call matsimtr('Xvv','tvir','X1')
-      call matsimtr('EW1vv','tvir','EW1')
-      call matsimtr('EW2vv','tvir','EW2')
+      call matsimtr('EW1vv','tvir','CIMW1')
+      call matsimtr('EW2vv','tvir','CIMW2')
       call matprint('X1',6)
-      call matprint('EW1',6)
-      call matprint('EW2',6)
+      call matprint('CIMW1',6)
+      call matprint('CIMW2',6)
 C
 C  matrices X, W1 and W2 ready in AO basis , remove matrices
 C  for temorary storage
@@ -2128,7 +2144,27 @@ C  construct B1 contribution to  W and Y
       call matmmult('virt','B1','tmss02')
       call matscal('tmss02',two)
       call matmmul2('tmss02','occa','tmw1','n','t','n')
-C
+
+C  form matrix W(ncf*ncf) for CIM calculation
+C  W=2(W1-W2-W3) [Eq(32)]
+      call matcopy('CIMW1','CIMW')
+      call matscal('CIMW',two)
+      call matadd1('CIMW2',-two,'CIMW')
+      call matdef('CTKC','q',ncf,ncf)
+
+C  construct W3 term in Eq(32) - NZG_6/15/2017
+C  W3 is represanted as CTKC here.
+      call matdef('CTK','r',ncf,nmo)
+      call matmmult('virt','TK','CTK')
+      call matscal('CTK',two)
+      call matmmul2('CTK','occa','CTKC','n','t','n')
+      call matadd1('CTKC',-two,'CIMW')
+      call matprint('CIMW',6)
+
+
+
+
+
 C  CvB1 saved in tmss02 for Y-terms
 C
 C  this is the last contribution to W
@@ -2137,6 +2173,7 @@ C     call matpose('tmw1')
       call matadd1('tmw1',-two,'W')
 cc
       if(iprint.ge.3) then
+         write(6,*) 'this w'
          call matprint('W',6)
          call matprint('X',6)
          call matprint('B1',6)
@@ -2179,7 +2216,7 @@ C ======================================================================
       subroutine matcollect(nvir,nmo,TT,xqcmo)
       implicit none
 
-      integer nvir
+      integer nvir,nmo
       real*8 TT(nvir,nmo),xqcmo(nvir,nmo)
       
       xqcmo=TT
@@ -2244,3 +2281,30 @@ C First term in Eq(20) and Eq(32)
       deallocate(tmp)
 
       end subroutine W1term_CIM
+
+
+C ======================================================================
+      subroutine TKterm_CIM(ncen,nval,nvir,nmo,TKvo,T_LMO,K_LMO)
+      implicit none
+
+C this routine calculates TvvKvo term which appears in the third term in
+C Eq(32) [W3] and first term in Eq(33) [Y1]
+
+      integer ncen,nval,nvir,nmo,ii,jj
+      real*8 TKvo(nvir,nmo),T_LMO(ncen,nval,nvir,nvir)
+      real*8 K_LMO(ncen,nval,nvir,nmo)
+      real*8,allocatable::tmp(:,:)
+
+      allocate(tmp(nvir,nmo))
+      TKvo=0.0D0
+      do ii=1,ncen
+         do jj=1,nval
+            tmp=0.0D0
+            call matmul_mkl(T_LMO(ii,jj,:,:),K_LMO(ii,jj,:,:),tmp,
+     &                      nvir,nvir,nmo)
+            TKvo=TKvo+tmp
+         enddo
+      enddo
+      deallocate(tmp)
+
+      end subroutine TKterm_CIM
