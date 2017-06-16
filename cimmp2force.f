@@ -302,7 +302,8 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*),trans(nmo,nmo),Ccen(ncf,ncen),iatom(natoms)
+      dimension gradv(3,natoms)
+      dimension trans(nmo,nmo),Ccen(ncf,ncen),iatom(natoms)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
@@ -438,7 +439,7 @@ C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423
       call matdef('CIMW2','s',ncf,ncf)  !Second term in Eq(20)
       call matdef('TK','r',nvir,nmo)
       call matdef('CIMW','q',ncf,ncf)
-
+      call matdef('CIMX','q',ncf,ncf)
 C
 C  the following matrices should be saved to the end
 C  matrix W will be contracted with Sx, and X and Aik
@@ -729,9 +730,9 @@ C
      1     access='direct',recl=8*nvir*nmo)
       open(unit=ndisk2,file=filname5(1:len+4),form='unformatted',
      1     access='direct',recl=8*nvir*nmo)
-      call cphfz(ncf,nval,nvir,bl(iocca),bl(ivira),
-     1           bl(iyaia),bl(izaia),nmo,thresh,inx,
-     2           iprint,ncore,ndisk1,ndisk2)
+      call cphfz_CIM(ncf,nval,nvir,bl(iocca),bl(ivira),
+     1               bl(iyaia),bl(izaia),nmo,thresh,inx,
+     2               iprint,ncore,ndisk1,ndisk2,ncen,Ccen,trans)
       close(unit=ndisk1,status='delete')
       close(unit=ndisk2,status='delete')
 cc
@@ -793,8 +794,8 @@ cc
       endif
 cc
 C      if(iprint.ge.2) then
-         Write(iout,*) ' MP2 gradients after A2-terms'
-         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
+C         Write(iout,*) ' MP2 gradients after A2-terms'
+C         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
 C      endif
 
 
@@ -811,14 +812,16 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
 C      call matcopy('DDT','XF')
-      call matcopy('X1','XF')
-      call matscal('XF',two)
-      ixadr=mataddr('XF')
+C      call matcopy('X1','XF')
+C      call matscal('XF',two)
+      ixadr=mataddr('CIMX')
 
-      call matprint('XF',6)
+C      call matprint('XF',6)
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
+
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
@@ -2161,7 +2164,8 @@ C  W3 is represanted as CTKC here.
       call matadd1('CTKC',-two,'CIMW')
       call matprint('CIMW',6)
 
-
+      call matrem('CTK')
+      call matrem('CTKC')
 
 
 
@@ -2208,6 +2212,10 @@ C  construction of matrix G(DDT)
       call matrem('CA')
 C     call matprint('Y',6)
 c
+      call matcopy('X2','CIMX')
+      call matadd1('X1',-one,'CIMX')
+      call matscal('CIMX',-two)
+
       return
       end
 
@@ -2308,3 +2316,463 @@ C Eq(32) [W3] and first term in Eq(33) [Y1]
       deallocate(tmp)
 
       end subroutine TKterm_CIM
+
+
+C============cphfz_CIM====================================
+      subroutine cphfz_CIM(ncf,    nval,   nvir,   ei,     ea,
+     1                     y,      z,      nmo,    thresh, inx,
+     2                     iprint, ncore,  ndisk,  ndisk2, ncen,
+     3                     Ccen,   trans)
+C
+      use memory
+      implicit real*8(a-h,o-z)
+C
+C   main routine for CPHF for MP2-gradients
+C
+C   SS. April 2003
+C   Modified subroutine according to Eqs. 78-81
+C   This will eliminate subroutine ztermsn
+C
+C   Svein Saebo, Fayetteville, AR summer 2002
+C   Svein Saebo, Fayetteville, AR summer 2003
+C   Svein Saebo, Fayetteville, AR summer 2006
+C
+C   determines z(a,i) virtual-occupied block,
+C   input matrix y in Y
+C   output marix z in z
+C
+C   Modified by Zhigang for CIM calculation_6/16/2017 @UARK
+
+C   this subroutine is called once from mp2_grad
+C
+C   Arguments:
+C   ncf           number of contracted basis functions
+C   nval          number of valence orbitals
+C   nvir          number of virtual orbitals
+C   ei(*)         orbital energies occupied prbital
+C   ea(*)         orbital energies virtual orbitals
+C   y(nvir,nval)  INPUT matrix y.  Note this matrix is generated from the
+C                 original Y(ncf,nval):  y=Cv *Y (done in the calling
+C                 program)
+C   z(nvir,nval)  OUTPUT matrix z
+C   nmo           number of occupied mos
+C   thresh        integral threshold (normally 1.0e-10)
+C   inx           aray with contraction info
+C   iprint        printlevel
+C   ncore         number of core orbitals
+C   ndisk         direct access unit for old iterated (Z's)
+C   ndisk2        direct access unit for old G(z)'s
+C
+C   External Calls:
+C   MakeGma2 :    Calculates two-electron part of the Fock matrix
+C                 using any symmertical matrix as density
+C   updatzk       determines new z's during CPHF-iterations
+C                 see subroutine updatzk for formula.
+C
+c     common /big/bl(30000)
+      dimension ei(*),ea(*),y(nvir,*),z(nvir,nmo)
+      dimension trans(nmo,nmo),Ccen(ncf,ncen)
+      integer*4 info4
+      dimension inx(*)
+      logical done,swtr,efit,dz2z
+      parameter (half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0,maxit=40)
+C   max CPHF iterations set to 40 here!
+      parameter (accur=1.0d-05,accu2=0.000416d0,accu3=0.0000416d0) 
+c     accu2 is threshold to switch integral threshold
+C
+      done=.false.
+      swtr=.true.
+      diffm=0.d0
+      tcphfz=0.0d0
+      efit=.false.
+      dz2z=.false.
+      itsw=7
+      if(ncf.gt.600)itsw=6
+
+c *****************
+c  Allocate memory
+C *****************
+C  First define some matrix for CIM calculation
+      call matdef('Zac','r',nvir,ncen) !Zac means Z_vir_cen block
+      izac=mataddr('Zac')
+      call matdef('DPCIM','q',ncf,ncf)
+      idpcim=mataddr('DPCIM')
+
+      nstrip=nvir*nmo
+      ictr=igetival('ictr')
+      call matdef('Gmat','s',ncf,ncf)
+      call matdef('DP','s',ncf,ncf)
+      call matdef('GZ','r',nvir,nmo)   ! this is G(z)
+      call matdef('dptm','q',ncf,ncf)
+      iadmp=mataddr('dptm')
+      call matdef('DelZ','r',nvir,nmo)
+      idelz=mataddr('DelZ')
+      call matdef('Gzold','r',nvir,nmo)
+      call matdef('ttxx','r',ncf,nmo)
+C  reserve memory for two copies of H and B used in DIIS
+      call getmem(maxit*maxit,ih1)
+      call getmem(maxit*maxit,ih2)
+      call getmem(maxit,iba)
+      call matdef('DZ','r',nvir,nmo)
+      iadz=mataddr('DZ')
+      call matdef('Zaio','r',nvir,nmo)
+      izaio=mataddr('Zaio')
+
+C
+C     end memory allocation
+c----------------------------------------------------------------
+      thres1=min(thresh,1.0d-10)
+      thres2=thres1*1000.d0           ! loose integral threshold
+      thresX=thres2
+      if(.not.swtr)thresX=thres1
+C  the first iterations with thres2 normally 10**-7, then thres1
+C  normally 10**-10
+C----------------------------------------------------------------
+C  get initial Z's ! current z is z (z is the same as 'Zai')
+      do ia=1,nvir
+         deno=ea(ia)
+         do ii=1,nmo
+            z(ia,ii)=-y(ia,ii)/(deno-ei(ii))
+         enddo
+      enddo
+C  initial Delta Z is simply Z
+      call matcopy('Zai','DelZ')
+C  start CPHF-iterations
+      write(6,*) ' Start CPHF'
+      write(6,*)
+      write(6,*) ' Initial Integral Threshold:  ',thresX
+      write(6,*)
+      write(6,*)  ' Iter    Max DeltaZ  Elapsed Time   Threshold'
+c----------------------------------------------------------------
+C    Iterations start here...........
+      call writez(ndisk,1,z,nstrip)
+      icpdi=0
+      icptx=0
+      call secund(tcpz1)
+      do icpit=1,maxit
+         call elapsec(tcpit1)
+         icpdi=icpdi+1
+         icptx=icptx+1
+C  construct  G(z)
+C    DP=1/2(Cv * z * Co+ + Co * z+ * Cv+)
+C  we are now using DeltaZ instead of Z
+         call matmmult('virt','DelZ','ttxx')
+         call matmmul2('ttxx','occa','dptm','n','t','n')
+         call tplustt(bl(iadmp),ncf)
+         call matscal('dptm',half)
+         call matcopy('dptm','DP')
+         igadr=mataddr('Gmat')
+         idsa=mataddr('DP')
+C  construct two-electron part of the Fock matrix with DP as density
+C  result in 'Gmat' = bl(igadr)
+         call mmark
+         call MakeGma2(ncf,nmo,nval,nvir,thresX,
+     1                 bl,bl(ictr),bl(idsa),bl(igadr))
+         call retmark
+         call matdef('ztmp','r',nvir,ncf)
+         call matmmul2('virt','Gmat','ztmp','t','n','n')
+         call matmmult('ztmp','occa','GZ')
+         call matrem('ztmp')
+         call matscal('GZ',four)
+         igz=mataddr('GZ')
+         igzo=mataddr('Gzold')
+
+C    COVERGENCE ACCELEFRATION--------------------------------
+C   copy previous H into current H with correct dimensions
+         if(icpdi.gt.1) call Hcopy(bl(ih1),bl(ih2),icpdi)
+C   calculate  new elements of H
+         call makdz(z,bl(iadz),nvir,nmo,ea,ei)
+C   need Gz(zn)  this can be calculated as
+C   Gz(deltaz)+Gz(zn-1)
+         if (icpdi.eq.1.or.icptx.eq.1) then
+            call matcopy('GZ','Gzold')
+         else
+            call readz(ndisk2,icpdi-1,bl(igzo),nstrip)
+            call matadd('GZ','Gzold')
+         endif
+         call writez(ndisk2,icpdi,bl(igzo),nstrip)
+         call newHB(icpdi,bl(ih1),bl(iba),nstrip,ndisk,
+     1              bl(igzo),z,bl(iadz),y)
+C     call printH(bl(ih1),bl(iba),icpdi)
+C   now ready to solve set of linear equations
+C   first make a copy of H
+         call dcopy(icpdi*icpdi,bl(ih1),1,bl(ih2),1)
+C
+         call getint(icpdi,ipiv)
+         call DGESV(icpdi,1,bl(ih1),icpdi,bl(ipiv),bl(iba),icpdi,info4)
+         info=int(info4)
+         call retmem(1)
+C  error check
+         if (info.ne.0) then
+            if (info.lt.0) then
+               call nerror(1,'DGESV','wrong argument',info,icpdi)
+            else
+               call nerror(2,'DGESV','singular matrix',info,icpdi)
+            endif
+         endif
+C  no errors ....continue
+C  upon exit from DGESV H is destroyed and B contains the coefficients
+C  construct improved z from these coefficients and old iterates
+C
+         if (iprint.ge.4) then
+            write(6,*) ' Coefficients:'
+            write(6,12)(bl(iba-1+iw),iw=1,icpdi)
+   12       format(1x,5f10.7)
+         endif
+c
+C  construct  unprimed Z's:
+         call matscal('Zai',bl(iba-1+icpdi))
+         if (icpdi.gt.1) then
+            do minit=1,icpdi-1
+               call readz(ndisk,minit,bl(iadz),nstrip)
+               call matadd1('DZ',bl(iba-1+minit),'Zai')
+            enddo
+         endif
+         call writez(ndisk,icpdi,z,nstrip)
+C if not first iteration compare with previous z
+         if (icpdi.gt.1) then
+            call readz(ndisk,icpdi-1,bl(idelz),nstrip)
+            call matscal('DelZ',-1.0d0)
+            call matadd('Zai','DelZ')
+            ix=idamax(nvir*nmo,bl(idelz),1)
+            diffm=abs(bl(idelz+ix-1))
+            if (diffm.lt.accur) then
+               done=.true.
+               goto 200
+            endif
+C   if done is true we are finished
+            if (swtr.and.(diffm.lt.accu2.or.icpit.ge.itsw)) then
+               swtr=.false.
+               icpdi=0
+               call elapsec(tcpit2)
+               write(6,11) icpit,diffm,(tcpit2-tcpit1)/60.0d0,thresX
+               thresX=thres1
+               write(6,*) ' Switching to integral threshold: ',thresX
+               write(6,*) ' Restarting DIIS'
+               call matcopy('Zai','DelZ')
+               call writez(ndisk,1,z,nstrip)
+               diffm=0.0d0
+               icptx=0
+               cycle
+            endif
+C       if(diffm.lt.accu3.and.icptx.ge.4) then
+C       icptx=0
+C       dz2z=.true.
+C       endif
+            if (icpdi.ge.itsw) then
+               call elapsec(tcpit2)
+               write(6,11) icpit,diffm,(tcpit2-tcpit1)/60.0d0,thresX
+               write(6,*) 'Switching to full Z and restarting DIIS'
+               call matcopy('Zai','DelZ')
+               call writez(ndisk,1,z,nstrip)
+               diffm=0.0d0
+               icpdi=0
+               dz2z=.false.
+               icptx=0
+               cycle
+            endif
+         endif
+C  the H' and G' must be modified to H and G (fixH and fixGz)
+C     call printH(bl(ih2),bl(iba),icpdi)
+         call fixH(bl(iba),bl(ih2),bl(ih1),icpdi)
+C     call printH(bl(ih1),bl(iba),icpdi)
+         call dcopy(icpdi*icpdi,bl(ih1),1,bl(ih2),1)
+         call fixGz(bl(iba),ndisk2,icpdi,nvir,nmo)
+C  all DIIS stuff updated  goon...
+         call readz(ndisk2,icpdi,bl(igzo),nstrip)
+         iflg=1
+         call updatzk(z,y,bl(igzo),ea,ei,nvir,nmo,iflg)
+         call writez(ndisk,icpdi+1,z,nstrip)
+         call readz(ndisk,icpdi,bl(idelz),nstrip)
+         call matadd1('Zai',-1.0d0,'DelZ')
+         call matscal('DelZ',-1.0d0)
+         ix=idamax(nvir*nmo,bl(idelz),1)
+         diffx=abs(bl(idelz+ix-1))
+         if (diffx.lt.accur) then
+            write(6,*) 'Convergence criterion met'
+            done=.true.
+            diffm=diffx
+         endif
+C
+  200    continue
+         call elapsec(tcpit2)
+         write(6,11) icpit,diffm,(tcpit2-tcpit1)/60.0d0,thresX
+   11    format(1x,i3,6x,f10.8,4x,1f6.3,5x,1e10.2)
+C
+         if (dz2z) then
+            write(6,*) 'Switching to full Z'
+            call matcopy('Zai','DelZ')
+            dz2z=.false.
+         endif
+         if (done) then
+            write(6,*) ' CPHF has converged '
+            goto 100
+         endif
+C
+      enddo    ! end of iteration loop
+cc
+      write(6,*) ' CPHF did not converge: Max diff :',diffm
+  100 continue
+      call secund(tcpz2)
+      tcphfz=tcpz2-tcpz1
+      if (efit) then  !  this is not needed currently disabled
+         write(6,*)'Do a final full iteration'
+C  construct  G(z)
+         call matmmult('virt','Zai','ttxx')
+         call matmmul2('ttxx','occa','dptm','n','t','n')
+         call tplustt(bl(iadmp),ncf)
+         call matscal('dptm',half)
+         call matcopy('dptm','DP')
+         igadr=mataddr('Gmat')
+         idsa=mataddr('DP')
+C  construct two-electron part of the Fock matrix with DP as density
+C  result in 'Gmat' = bl(igadr)
+         call mmark
+         call secund(tcpz1)
+         call MakeGma2(ncf,nmo,nval,nvir,thresX,
+     1                 bl,bl(ictr),bl(idsa),bl(igadr))
+         call secund(tcpz2)
+         tcphfz=tcphfz+tcpz2-tcpz1
+         call retmark
+         call matdef('ztmp','r',nvir,ncf)
+         call matmmul2('virt','Gmat','ztmp','t','n','n')
+         call matmmult('ztmp','occa','GZ')
+         call matrem('ztmp')
+         call matscal('GZ',four)
+         iflg=1
+         call updatzk(z,y,bl(igz),ea,ei,nvir,nmo,iflg)
+      endif
+C
+      call f_lush(6)
+      call matrem('Zaio')
+      call matrem('DZ')
+      call retmem(3)
+      write(6,13)  icpit,tcphfz/60.0d0
+   13 format(1x,/,'Elapsed time for ',I2,' CPHF iterations:',f10.2,
+     c            ' min.')
+C
+C  transform Zai matrix from QCMO to central MOs
+      izai=mataddr('Zai')
+      call ZQtoL(bl(izai),bl(izac),trans,ncen,nmo,nvir)
+      call matdef('MOcen','r',ncf,ncen)
+      imocen=mataddr('MOcen')
+      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
+      call matdef('ttxx2','r',ncf,ncen)
+      call matmmult('virt','Zac','ttxx2')
+      call matmmul2('ttxx2','MOcen','DPCIM','n','t','n')
+      call tplustt(bl(idpcim),ncf)
+      call matscal('DPCIM',half)
+      call matrem('ttxx2')
+      call matrem('MOcen')
+      call matprint('DPCIM',6)
+      call matadd('DPCIM','CIMX')
+      call matprint('CIMX',6)
+          
+C  iterations finished
+C  Calculate contributions to the gradient, the following replaces
+C  subroutine ztermsn
+C  Contribution from the first term  (Fx) of Eq. 76
+C   the symmetrical matrix Z (DP here) should be added to
+C   2X-2CoACo+ before contracting with F(x)  Eq. (77
+      call matmmult('virt','Zai','ttxx')
+      call matmmul2('ttxx','occa','dptm','n','t','n')
+      call matrem('ttxx')
+      call tplustt(bl(iadmp),ncf)
+      call matscal('dptm',half)
+      call matprint('dptm',6)
+      call matadd('dptm','DDT')
+      call matprint('DDT',6)
+C  Frozen core:
+      if (ncore.gt.0) then
+         call matdef('zicao','q',ncf,ncf)
+         call matdef('zictm','r',ncf,ncore)
+         call matmmult('occu','Zic','zictm')
+         call matmmul2('zictm','coro','zicao','n','t','n')
+         izicao=mataddr('zicao')
+         call tplustt(bl(izicao),ncf)
+         call matscal('zicao',half)
+         call matadd('zicao','DDT')
+      endif
+C  end of first term frozen core
+C
+C  also -1/2 DG(Z)D should be added to W before contracting with Sx
+C  Eq. 80
+C
+      call matcopy('dptm','DP')
+C    frozen core
+      if (ncore.gt.0) call matadd('zicao','DP')
+      iZts=mataddr('DP')
+      call mmark
+      call MakeGma2(ncf,nmo,nval,nvir,thresh,
+     1              bl,bl(ictr),bl(iZts),bl(igadr))
+      call retmark
+
+      call matmmult('Gmat','den0','dptm')
+      call matscal('dptm',-half)
+      call matmmul2('den0','dptm','W','n','n','a')
+C  end frozen core
+C  end -1/2DG(Z)D term
+C  form matrix ztilda and add -c*ztildaC+ to W (Eq. 78)
+C
+      Call matdef('Ztilda','q',ncf,ncf)
+      call matdef('ztemp','r',ncf,nmo)
+      call matdef('ztil','r',nvir,nmo)
+      iztia=mataddr('ztil')
+      nstep=-1
+      do io=1,nmo
+         do ia=1,nvir
+            nstep=nstep+1
+            bl(iztia+nstep)=z(ia,io)*ei(io)
+         enddo
+      enddo
+      call matmmult('virt','ztil','ztemp')
+      call matmmul2('ztemp','occa','Ztilda','n','t','n')
+      izta=mataddr('Ztilda')
+      call tplustt(bl(izta),ncf)
+      call matadd1('Ztilda',-half,'W')
+      call matrem('ztil')
+      call matrem('ztemp')
+      call matrem('Ztilda')
+C   now frozen core
+      if (ncore.gt.0) then
+         call matdef('zict','r',nval,ncore)
+         izica=mataddr('zict')
+         izico=mataddr('Zic')
+         izicao=mataddr('zicao')
+         call makzict(bl(izica),bl(izico),ei,nval,ncore)
+         call matmmult('occu','zict','zictm')
+         call matmmul2('zictm','coro','zicao','n','t','n')
+         call tplustt(bl(izicao),ncf)
+         call matadd1('zicao',-half,'W')
+         call matrem('zict')
+         call matrem('zictm')
+         call matrem('zicao')
+      endif
+C    end frozen core
+      call matrem('Gzold')
+      call matrem('DelZ')
+      call matrem('dptm')
+      call matrem('GZ')
+      call matrem('DP')
+      call matrem('Gmat')
+      call matrem('DPCIM')
+      call matrem('Zac')
+      end
+
+
+C ======================================================================
+      subroutine ZQtoL(Zai,Zac,trans,ncen,nmo,nvir)
+C this routine transforms one of the indices of Tmnmo index from QCMO to
+C LMO.
+C NZG_5/16/2017 @UARK
+
+      use memory
+      implicit none
+
+      integer ncen,nmo,nvir
+      real*8 Zai(nvir,nmo),Zac(nvir,ncen),trans(nmo,nmo)
+
+      Zac=0.0D0
+      call matmul_mkl(Zai,trans(:,1:ncen),Zac,nvir,nmo,ncen)
+
+      end subroutine ZQtoL     
