@@ -911,7 +911,11 @@ C
 C --- MEMORY
       write(line,*) mwords
       call NJ_trim(line,k1,k2)
-      line='%MEM=200'
+      if (calforce) then
+         line='%MEM=200'
+      else
+         line='%MEM=500'
+      endif
       write(inp,100) trim(line)
 C
 C --- GEOMETRY
