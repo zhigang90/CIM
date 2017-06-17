@@ -794,8 +794,8 @@ cc
       endif
 cc
 C      if(iprint.ge.2) then
-C         Write(iout,*) ' MP2 gradients after A2-terms'
-C         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
+         Write(iout,*) ' MP2 gradients after A2-terms'
+         call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
 C      endif
 
 
@@ -821,7 +821,6 @@ C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
 
-      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
@@ -1455,7 +1454,7 @@ C
 
 C      call matcopy('den0','denf')
       call matcopy('dencen','denf')
-      call matcopy('DDT','ddtf')
+      call matcopy('CIMX','ddtf')
       idena=mataddr('denf')
       iddt=mataddr('ddtf')
 C
@@ -1566,9 +1565,6 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-C                  call matzero('denf')
-                  call matzero('ddtf')
-
                   call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
@@ -1743,11 +1739,6 @@ C
 C=============
       dimension T(ncf,*),D(ncf,ncf),DDT(ncf,ncf)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
-
-C NZG
-      DDT=0.0D0;D=0.0D0
- 
-C      write(6,*) D
 
       fact=one4
       if(my.eq.lam) fact=one8
@@ -2119,9 +2110,9 @@ cc
       call matsimtr('Xvv','tvir','X1')
       call matsimtr('EW1vv','tvir','CIMW1')
       call matsimtr('EW2vv','tvir','CIMW2')
-      call matprint('X1',6)
-      call matprint('CIMW1',6)
-      call matprint('CIMW2',6)
+C      call matprint('X1',6)
+C      call matprint('CIMW1',6)
+C      call matprint('CIMW2',6)
 C
 C  matrices X, W1 and W2 ready in AO basis , remove matrices
 C  for temorary storage
@@ -2162,7 +2153,7 @@ C  W3 is represanted as CTKC here.
       call matscal('CTK',two)
       call matmmul2('CTK','occa','CTKC','n','t','n')
       call matadd1('CTKC',-two,'CIMW')
-      call matprint('CIMW',6)
+C      call matprint('CIMW',6)
 
       call matrem('CTK')
       call matrem('CTKC')
@@ -2395,7 +2386,11 @@ C *****************
 C  First define some matrix for CIM calculation
       call matdef('Zac','r',nvir,ncen) !Zac means Z_vir_cen block
       izac=mataddr('Zac')
+      call matdef('Ztac','r',nvir,ncen)
+      iztac=mataddr('Ztac')
       call matdef('DPCIM','q',ncf,ncf)
+      idpcim=mataddr('DPCIM')
+      call matdef('CIM','q',ncf,ncf)
       idpcim=mataddr('DPCIM')
 
       nstrip=nvir*nmo
@@ -2440,7 +2435,7 @@ C  initial Delta Z is simply Z
 C  start CPHF-iterations
       write(6,*) ' Start CPHF'
       write(6,*)
-      write(6,*) ' Initial Integral Threshold:  ',thresX
+      write(6,"(' Initial Integral Threshold:  ',E14.4)") thresX
       write(6,*)
       write(6,*)  ' Iter    Max DeltaZ  Elapsed Time   Threshold'
 c----------------------------------------------------------------
@@ -2648,26 +2643,9 @@ C
       call matrem('DZ')
       call retmem(3)
       write(6,13)  icpit,tcphfz/60.0d0
-   13 format(1x,/,'Elapsed time for ',I2,' CPHF iterations:',f10.2,
+   13 format(1x,/,' Elapsed time for ',I2,' CPHF iterations:',f10.2,
      c            ' min.')
 C
-C  transform Zai matrix from QCMO to central MOs
-      izai=mataddr('Zai')
-      call ZQtoL(bl(izai),bl(izac),trans,ncen,nmo,nvir)
-      call matdef('MOcen','r',ncf,ncen)
-      imocen=mataddr('MOcen')
-      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
-      call matdef('ttxx2','r',ncf,ncen)
-      call matmmult('virt','Zac','ttxx2')
-      call matmmul2('ttxx2','MOcen','DPCIM','n','t','n')
-      call tplustt(bl(idpcim),ncf)
-      call matscal('DPCIM',half)
-      call matrem('ttxx2')
-      call matrem('MOcen')
-      call matprint('DPCIM',6)
-      call matadd('DPCIM','CIMX')
-      call matprint('CIMX',6)
-          
 C  iterations finished
 C  Calculate contributions to the gradient, the following replaces
 C  subroutine ztermsn
@@ -2679,9 +2657,9 @@ C   2X-2CoACo+ before contracting with F(x)  Eq. (77
       call matrem('ttxx')
       call tplustt(bl(iadmp),ncf)
       call matscal('dptm',half)
-      call matprint('dptm',6)
+C      call matprint('dptm',6)
       call matadd('dptm','DDT')
-      call matprint('DDT',6)
+C      call matprint('DDT',6)
 C  Frozen core:
       if (ncore.gt.0) then
          call matdef('zicao','q',ncf,ncf)
@@ -2725,6 +2703,37 @@ C
             bl(iztia+nstep)=z(ia,io)*ei(io)
          enddo
       enddo
+
+C  transform Zai and Ztil matrices from QCMO to central MOs
+      izai=mataddr('Zai')
+      call ZQtoL(bl(izai),bl(izac),trans,ncen,nmo,nvir)
+      call ZQtoL(bl(iztia),bl(iztac),trans,ncen,nmo,nvir)
+      call matdef('MOcen','r',ncf,ncen)
+      imocen=mataddr('MOcen')
+      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
+      call matdef('ttxx2','r',ncf,ncen)
+      call matmmult('virt','Zac','ttxx2')
+      call matmmul2('ttxx2','MOcen','DPCIM','n','t','n')
+      call tplustt(bl(idpcim),ncf)
+      call matscal('DPCIM',half)
+      call matrem('ttxx2')
+
+      call matdef('zttemp','r',ncf,nmo)
+      call matmmult('virt','Ztac','zttemp')
+      call matmmul2('zttemp','MOcen','Ztilda','n','t','n')
+      izta=mataddr('Ztilda')
+      call tplustt(bl(izta),ncf)
+      call matadd1('Ztilda',-half,'W')
+      call matrem('ztil')
+      call matrem('ztemp')
+
+
+
+      call matrem('MOcen')
+C      call matprint('DPCIM',6)
+      call matadd('DPCIM','CIMX')
+C      call matprint('CIMX',6)
+          
       call matmmult('virt','ztil','ztemp')
       call matmmul2('ztemp','occa','Ztilda','n','t','n')
       izta=mataddr('Ztilda')

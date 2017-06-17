@@ -159,7 +159,7 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*)
+      dimension gradv(3,natoms)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       logical exists
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
