@@ -845,11 +845,27 @@ cc
       call matmmul2('DY','occa','W','n','t','a')
       call matrem('DY')
       iwad=mataddr('W')
+
+      call matdef('CIMY','r',ncf,ncen)
+      call matdef('DYCIM','r',ncf,ncen)
+      icimy=mataddr('CIMY')
+      iy=mataddr('Y')
+      call ZQtoL(bl(iy),bl(icimy),trans,ncen,nmo,ncf)
+      call matmmult('den0','CIMY','DYCIM')
+      call matscal('DYCIM',-onef)
+      call matdef('MOcen','r',ncf,ncen)
+      imocen=mataddr('MOcen')
+      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
+      call matmmul2('DYCIM','MOcen','CIMW','n','t','a')
+      call matrem('MOcen')
+      call matrem('DYCIM')
+      call matrem('CIMY')
+         
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
       call Makegrad(natoms,gradv,bl(ifxsx),nsunit,ntri,
-     1             bl(iwad),ncf)
+     1             bl(icimy),ncf)
 C
       call matrem('fxsz')
       call matrem('fxsy')
@@ -1452,8 +1468,8 @@ C
       call matdef('denf','q',ncf,ncf)
       call matdef('ddtf','q',ncf,ncf)
 
-C      call matcopy('den0','denf')
-      call matcopy('dencen','denf')
+      call matcopy('den0','denf')
+C      call matcopy('dencen','denf')
       call matcopy('CIMX','ddtf')
       idena=mataddr('denf')
       iddt=mataddr('ddtf')
@@ -1742,12 +1758,14 @@ C=============
 
       fact=one4
       if(my.eq.lam) fact=one8
-      dml=D(my,lam)*half*fact+DDT(my,lam)*one8
+C     dml=D(my,lam)*half*fact+DDT(my,lam)*one8
+      dml=DDT(my,lam)*one8
 C     dml=DDT(my,lam)*one8
       ddtml=DDT(my,lam)*one8
 c
       do ny=1,ncf
-         dmyny=D(ny,my)*fact+DDT(ny,my)*one4
+C        dmyny=D(ny,my)*fact+DDT(ny,my)*one4
+         dmyny=DDT(ny,my)*one4
          do isi=1,ncf
             T(isi,ny)=T(isi,ny)+dmyny*D(isi,lam)-dml*D(isi,ny)
          enddo
@@ -2390,8 +2408,9 @@ C  First define some matrix for CIM calculation
       iztac=mataddr('Ztac')
       call matdef('DPCIM','q',ncf,ncf)
       idpcim=mataddr('DPCIM')
-      call matdef('CIM','q',ncf,ncf)
-      idpcim=mataddr('DPCIM')
+      call matdef('ZtCIM','q',ncf,ncf)
+      iztcim=mataddr('ZtCIM')
+    
 
       nstrip=nvir*nmo
       ictr=igetival('ictr')
@@ -2692,6 +2711,7 @@ C  end frozen core
 C  end -1/2DG(Z)D term
 C  form matrix ztilda and add -c*ztildaC+ to W (Eq. 78)
 C
+
       Call matdef('Ztilda','q',ncf,ncf)
       call matdef('ztemp','r',ncf,nmo)
       call matdef('ztil','r',nvir,nmo)
@@ -2717,23 +2737,29 @@ C  transform Zai and Ztil matrices from QCMO to central MOs
       call tplustt(bl(idpcim),ncf)
       call matscal('DPCIM',half)
       call matrem('ttxx2')
-
-      call matdef('zttemp','r',ncf,nmo)
+      call matdef('zttemp','r',ncf,ncen)
       call matmmult('virt','Ztac','zttemp')
-      call matmmul2('zttemp','MOcen','Ztilda','n','t','n')
-      izta=mataddr('Ztilda')
-      call tplustt(bl(izta),ncf)
-      call matadd1('Ztilda',-half,'W')
-      call matrem('ztil')
-      call matrem('ztemp')
-
-
+      call matmmul2('zttemp','MOcen','ZtCIM','n','t','n')
+      iztcim=mataddr('ZtCIM')
+      call tplustt(bl(iztcim),ncf)
+      call matadd1('ZtCIM',-half,'CIMW')
+      call matrem('zttemp')
 
       call matrem('MOcen')
 C      call matprint('DPCIM',6)
       call matadd('DPCIM','CIMX')
 C      call matprint('CIMX',6)
           
+      call mmark
+      call MakeGma2(ncf,nmo,nval,nvir,thresh,
+     &              bl,bl(ictr),bl(idpcim),bl(igradr))
+      call retmark
+      call matdef('dptm2','q',ncf,ncf)
+      call matmmult('Gmat','den0','dptm2')
+      call matscal('dptm2',-half)
+      call matmmul2('den0','dptm2','CIMW','n','n','a')
+      call matrem('dptm2')
+
       call matmmult('virt','ztil','ztemp')
       call matmmul2('ztemp','occa','Ztilda','n','t','n')
       izta=mataddr('Ztilda')
@@ -2764,14 +2790,16 @@ C    end frozen core
       call matrem('GZ')
       call matrem('DP')
       call matrem('Gmat')
+      call matrem('ZtCIM')
       call matrem('DPCIM')
+      call matrem('Ztac')
       call matrem('Zac')
       end
 
 
 C ======================================================================
       subroutine ZQtoL(Zai,Zac,trans,ncen,nmo,nvir)
-C this routine transforms one of the indices of Tmnmo index from QCMO to
+C this routine transforms one of the indices of Z, Ztilda and Y from QCMO to
 C LMO.
 C NZG_5/16/2017 @UARK
 
