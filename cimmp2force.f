@@ -238,7 +238,7 @@ c
       write(iout,54)
       write(iout,*) "Two-electron contributions of the forces:"
       inuc=igetival('inuc')
-      call torque_CIM(Natom,0,bl(inuc),bl(lforc2))
+      call torque_CIM(Natom,0,bl(inuc),bl(lforc2),iatom)
       write(iout,54)
 
       call retmark
@@ -308,6 +308,8 @@ c     common /intbl/maxsh,inx(100)
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
 c
+      real*8,allocatable::Alq(:,:)
+
       call secund(tgr0)
       call elapsec(egr0)
 c
@@ -408,20 +410,26 @@ C  Calculate Matrix A
      $            iscs)
 
 C  Transform the first index from QCMO to LMO. Only to central LMOs.
-      call matdef('Alq','r',ncen,nval)
+      allocate(Alq(ncen,nval))
       call matdef('Afull','q',nval,nval)
       call matcopy('Aik','Afull')
-      ia=mataddr('Afull')
-      ialq=mataddr('Alq')
-      call TQtoL(bl(ia),bl(ialq),trans,ncen,nval)
+      iafull=mataddr('Afull')
+      call TQtoL(bl(iafull),Alq,trans,ncen,nval)
       call matrem('Afull')
+
+C  Transform two indices of A from QCMO to central LMO.
+C      call matdef('All','q',ncen,ncen)
+C      iall=mataddr('All')
+C      call matmul_mkl(bl(ialq),trans(:,1:ncen),bl(iall),ncen,nval,ncen)
 
 C  X2=Ccen Alq CoT !CoT is transpose of Co || This is the second term of
 C  Eq(19)
       call matdef('X2','q',ncf,ncf)
       ix2=mataddr('X2')
       ioccu=mataddr('occu')
-      call BackTrans_CIM(bl(ialq),bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
+      call BackTrans_CIM(Alq,bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
+C      call BackTrans_CIM(bl(iall),bl(ix2),ncf,ncen,ncen,Ccen,Ccen)
+      deallocate(Alq)
 
       call secund(taik2)
       call elapsec(eaik2)
@@ -434,7 +442,7 @@ cc
 C Below are for CIM calculation and the equation numbers are from this
 C paper:
 C    S.Saebo,J.Baker,K.Wolinski & P.Pulay,J.Chem.Phys.,120,2004,11423 
-      call matdef('X1','s',ncf,ncf)   !Eq(17)
+      call matdef('X1','q',ncf,ncf)     !Eq(17)
       call matdef('CIMW1','s',ncf,ncf)  !First term in Eq(20)
       call matdef('CIMW2','s',ncf,ncf)  !Second term in Eq(20)
       call matdef('TK','r',nvir,nmo)
@@ -793,12 +801,12 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
-
-
+      endif
+C NZG
+      stop
 C
 C  build gradient vector
 C
@@ -820,17 +828,15 @@ C      call matprint('XF',6)
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
-
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
 ccNZG
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
+      endif
 C
-      stop
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
 C
@@ -842,6 +848,10 @@ cc
       call matdef('DY','r',ncf,nmo)
       call matmmult('den0','Y','DY')
       call matscal('DY',-onef)
+      call matdef('temp1','q',ncf,ncf)
+      call matzero('temp1')
+      call matmmul2('DY','occa','temp1','n','t','a')
+      call matrem('temp1')
       call matmmul2('DY','occa','W','n','t','a')
       call matrem('DY')
       iwad=mataddr('W')
@@ -851,21 +861,26 @@ cc
       icimy=mataddr('CIMY')
       iy=mataddr('Y')
       call ZQtoL(bl(iy),bl(icimy),trans,ncen,nmo,ncf)
+C NZG
       call matmmult('den0','CIMY','DYCIM')
       call matscal('DYCIM',-onef)
       call matdef('MOcen','r',ncf,ncen)
       imocen=mataddr('MOcen')
       call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
+      call matdef('temp1','q',ncf,ncf)
+      call matzero('temp1')
+      call matmmul2('DYCIM','MOcen','temp1','n','t','a')
+      call matrem('temp1')
       call matmmul2('DYCIM','MOcen','CIMW','n','t','a')
       call matrem('MOcen')
       call matrem('DYCIM')
       call matrem('CIMY')
-         
+      icimw=mataddr('CIMW')
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
       call Makegrad(natoms,gradv,bl(ifxsx),nsunit,ntri,
-     1             bl(icimy),ncf)
+     1             bl(icimw),ncf)
 C
       call matrem('fxsz')
       call matrem('fxsy')
@@ -878,14 +893,14 @@ cc
 cc
       if(iprint.ge.2) then
           Write(iout,*) ' MP2 gradients after W-terms:'
-          call torque(NAtoms,0,bl(inuc),gradv )
+          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
       endif
 C
 C   before returning calculate the MP2 dipole moments
-      call matdef('dip','v',3,3)
-      idip=mataddr('dip')
-      call mp2dip(bl(idip),ncf,bl(ictr),ncs,natoms)
-      call matrem('dip')
+C      call matdef('dip','v',3,3)
+C      idip=mataddr('dip')
+C      call mp2dip(bl(idip),ncf,bl(ictr),ncs,natoms)
+C      call matrem('dip')
 c
 c
 ckw2008kw2008kw2008kw2008kw2008kw2008kw2008kw2008-----
@@ -1757,6 +1772,8 @@ C=============
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
       fact=one4
+C NZG
+      D=0.0D0; DDT=0.0D0
       if(my.eq.lam) fact=one8
 C     dml=D(my,lam)*half*fact+DDT(my,lam)*one8
       dml=DDT(my,lam)*one8
@@ -2067,7 +2084,7 @@ cc
       endif
 
       allocate(T_LMO(ncen,nval,nvir,nvir),T4_LMO(ncen,nval,nvir,nvir))
-      allocate(Ttil_LMO(ncen,nval,nvir,nvir))
+      allocate(Ttil_LMO(nval,ncen,nvir,nvir))
       allocate(K_LMO(ncen,nval,nvir,nmo))
       T_LMO=0.0D0; Ttil_LMO=0.0D0
       do k=1,nvir
@@ -2081,19 +2098,22 @@ cc
                   oej=bl(iocca+jj)
                   ij=ij+1
                   Tqcmo2(ii,jj)=Tqcmo(ij,l,k)
-                  Ttilqcmo2(ii,jj)=Ttilqcmo(ij,l,k)
+                  Ttilqcmo2(jj,ii)=Ttilqcmo(ij,l,k)
                   T4qcmo2(ii,jj)=(oei+oej)*Tqcmo2(ii,jj)
                   if (ii/=jj) then
                      Tqcmo2(jj,ii)=Tqcmo(ij,k,l)
-                     Ttilqcmo2(jj,ii)=Ttilqcmo(ij,k,l)
+                     Ttilqcmo2(ii,jj)=Ttilqcmo(ij,k,l)
                      T4qcmo2(jj,ii)=(oei+oej)*Tqcmo2(jj,ii)
                   endif
                enddo
             enddo
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,Tqcmo2,nval,0.0D0,T_LMO(:,:,l,k),ncen)
-            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
-     &                 nval,Ttilqcmo2,nval,0.0D0,Ttil_LMO(:,:,l,k),ncen)
+            call matmul_mkl(Ttilqcmo2,trans(:,1:ncen),Ttil_LMO(:,:,l,k),
+     &                      nval,nval,ncen)
+
+C            call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
+C     &                 nval,Ttilqcmo2,nval,0.0D0,Ttil_LMO(:,:,l,k),ncen)
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,T4qcmo2,nval,0.0D0,T4_LMO(:,:,l,k),ncen)
             deallocate(Tqcmo2,Ttilqcmo2,T4qcmo2)
@@ -2250,7 +2270,7 @@ C Eq(17) and second term in Eq(20) or Eq(32)
 
       integer ncen,nval,nvir,ii,jj
       real*8 Xvv(nvir,nvir),T_LMO(ncen,nval,nvir,nvir)
-      real*8 Ttil_LMO(ncen,nval,nvir,nvir)
+      real*8 Ttil_LMO(nval,ncen,nvir,nvir)
       real*8,allocatable::tmp(:,:)
 
       allocate(tmp(nvir,nvir))
@@ -2258,7 +2278,7 @@ C Eq(17) and second term in Eq(20) or Eq(32)
       do ii=1,ncen
          do jj=1,nval
             tmp=0.0D0
-            call matmul_mkl(Ttil_LMO(ii,jj,:,:),T_LMO(ii,jj,:,:),tmp,
+            call matmul_mkl(Ttil_LMO(jj,ii,:,:),T_LMO(ii,jj,:,:),tmp,
      &                      nvir,nvir,nvir)
             Xvv=Xvv+tmp
          enddo
@@ -2277,7 +2297,7 @@ C First term in Eq(20) and Eq(32)
 
       integer ncen,nval,nvir,i,j,k,l
       real*8 Xvv(nvir,nvir),T_LMO(ncen,nval,nvir,nvir)
-      real*8 Ttil_LMO(ncen,nval,nvir,nvir),Fockv(nvir,nvir)
+      real*8 Ttil_LMO(nval,ncen,nvir,nvir),Fockv(nvir,nvir)
       real*8,allocatable::tmp(:,:)
 
       allocate(tmp(nvir,nvir))
@@ -2287,10 +2307,10 @@ C First term in Eq(20) and Eq(32)
             tmp=0.0D0
             do k=1,nvir
                do l=1,nvir
-                  Ttil_LMO(i,j,k,l)=Ttil_LMO(i,j,k,l)*Fockv(l,l)
+                  Ttil_LMO(j,i,k,l)=Ttil_LMO(j,i,k,l)*Fockv(l,l)
                enddo
             enddo
-            call matmul_mkl(Ttil_LMO(i,j,:,:),T_LMO(i,j,:,:),tmp,
+            call matmul_mkl(Ttil_LMO(j,i,:,:),T_LMO(i,j,:,:),tmp,
      &                      nvir,nvir,nvir)
             Xvv=Xvv+tmp
          enddo
@@ -2308,7 +2328,7 @@ C this routine calculates TvvKvo term which appears in the third term in
 C Eq(32) [W3] and first term in Eq(33) [Y1]
 
       integer ncen,nval,nvir,nmo,ii,jj
-      real*8 TKvo(nvir,nmo),T_LMO(ncen,nval,nvir,nvir)
+      real*8 TKvo(nvir,nmo),T_LMO(nval,ncen,nvir,nvir)
       real*8 K_LMO(ncen,nval,nvir,nmo)
       real*8,allocatable::tmp(:,:)
 
@@ -2317,7 +2337,7 @@ C Eq(32) [W3] and first term in Eq(33) [Y1]
       do ii=1,ncen
          do jj=1,nval
             tmp=0.0D0
-            call matmul_mkl(T_LMO(ii,jj,:,:),K_LMO(ii,jj,:,:),tmp,
+            call matmul_mkl(T_LMO(jj,ii,:,:),K_LMO(ii,jj,:,:),tmp,
      &                      nvir,nvir,nmo)
             TKvo=TKvo+tmp
          enddo
@@ -2698,12 +2718,14 @@ C
       call matcopy('dptm','DP')
 C    frozen core
       if (ncore.gt.0) call matadd('zicao','DP')
+C      call matprint('DP',6)
       iZts=mataddr('DP')
       call mmark
       call MakeGma2(ncf,nmo,nval,nvir,thresh,
      1              bl,bl(ictr),bl(iZts),bl(igadr))
       call retmark
 
+C      call matprint('Gmat',6)
       call matmmult('Gmat','den0','dptm')
       call matscal('dptm',-half)
       call matmmul2('den0','dptm','W','n','n','a')
@@ -2750,11 +2772,16 @@ C      call matprint('DPCIM',6)
       call matadd('DPCIM','CIMX')
 C      call matprint('CIMX',6)
           
+      call matdef('DPCIMS','s',ncf,ncf)
       call mmark
+      call matcopy('DPCIM','DPCIMS')
+      idpcims=mataddr('DPCIMS')
       call MakeGma2(ncf,nmo,nval,nvir,thresh,
-     &              bl,bl(ictr),bl(idpcim),bl(igradr))
+     &              bl,bl(ictr),bl(idpcims),bl(igadr))
       call retmark
+      call matrem('DPCIMS')
       call matdef('dptm2','q',ncf,ncf)
+C NZG
       call matmmult('Gmat','den0','dptm2')
       call matscal('dptm2',-half)
       call matmmul2('den0','dptm2','CIMW','n','n','a')

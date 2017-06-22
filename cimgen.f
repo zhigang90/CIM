@@ -242,7 +242,7 @@ C NZG_10/6/2016 @NJU
       fpao=.true.
       cpao=.false.
 
-      calforce=.false.
+      calforce2=.false.
       nofrozen=.false.
 
       call readopt(inp,nopt,word,ioptyp,iopv,ropv,chopv,ifound)
