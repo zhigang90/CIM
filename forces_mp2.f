@@ -283,6 +283,7 @@ C      call matsub('evir','epsi',nmo+1,ncf)
 C NZG
       call matdef('Xq','q',ncf,ncf)
       call matdef('X2q','q',ncf,ncf)
+      call matdef('X3q','q',ncf,ncf)
 C NZG
       call matsub('evir','epsi',nmo+1,nvir+nmo) !NZG_3/31/2017
       call matsub('eocc','epsi',ncore+1,nmo)
@@ -641,7 +642,7 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('DDT','XF')
-      ixadr=mataddr('X2q')
+      ixadr=mataddr('X3q')
 C NZG
 
 C
@@ -653,10 +654,10 @@ C NZG
      1             bl(ixadr),ncf)
       call matrem('XF')
 cc
-      if(iprint.ge.2) then
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
 C NZG
       stop
 C
@@ -3749,6 +3750,8 @@ C   2X-2CoACo+ before contracting with F(x)  Eq. (77
       call matrem('ttxx')
       call tplustt(bl(iadmp),ncf)
       call matscal('dptm',half)
+C NZG
+      call matcopy('dptm','X3q')
       call matadd('dptm','DDT')
 C  Frozen core:
       if (ncore.gt.0) then
