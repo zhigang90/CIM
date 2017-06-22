@@ -159,7 +159,7 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
-      dimension gradv(3,*)
+      dimension gradv(3,natoms)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       logical exists
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
@@ -282,6 +282,7 @@ C  There was some problem with the dimension of evir when ncf/=nmo+nvir
 C      call matsub('evir','epsi',nmo+1,ncf)
 C NZG
       call matdef('Xq','q',ncf,ncf)
+      call matdef('X2q','q',ncf,ncf)
 C NZG
       call matsub('evir','epsi',nmo+1,nvir+nmo) !NZG_3/31/2017
       call matsub('eocc','epsi',ncore+1,nmo)
@@ -640,15 +641,14 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('DDT','XF')
-      ixadr=mataddr('XF')
-
-      call matprint('Xq',6)
-      call matadd1('Xq',-two,'XF')
-C      call matrem('Xq')
+      ixadr=mataddr('X2q')
+C NZG
 
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
+C NZG
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
@@ -657,6 +657,8 @@ cc
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
       endif
+C NZG
+      stop
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -930,7 +932,6 @@ C  Finally transform to AO basis and save
 C
       call matsimtr('Tsum1','tvir','X')
       call matcopy('X','Xq')
-      call matprint('X',6)
       call matsimtr('Tsum2','tvir','W1')
       call matsimtr('Tsum4','tvir','W2')
 cc
@@ -996,6 +997,9 @@ C  calculate the first term on eq. 33 and add to Y
 c     call matprint('Y',6)
 C  calculate the "density matrix' DDT=2[X-CAC] to be used for
 C  construction of matrix G(DDT)
+      call matzero('X2q')
+      call matmmul2('CA','occu','X2q','n','t','n')
+      call matscal('X2q',-two)
       call matmmul2('CA','occu','DDT','n','t','n')
       call matadd1('X',-one,'DDT')
       call matscal('DDT',-two)
