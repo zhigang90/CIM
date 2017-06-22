@@ -425,6 +425,8 @@ C      call matmul_mkl(bl(ialq),trans(:,1:ncen),bl(iall),ncen,nval,ncen)
 C  X2=Ccen Alq CoT !CoT is transpose of Co || This is the second term of
 C  Eq(19)
       call matdef('X2','q',ncf,ncf)
+C NZG
+      call matdef('X3','q',ncf,ncf)
       ix2=mataddr('X2')
       ioccu=mataddr('occu')
       call BackTrans_CIM(Alq,bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
@@ -818,8 +820,8 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
 C      call matcopy('DDT','XF')
-      call matcopy('X1','XF')
-      call matscal('XF',two)
+      call matcopy('X3','XF')
+C      call matscal('XF',-two)
 C      ixadr=mataddr('CIMX')
       ixadr=mataddr('XF')
 C      call matprint('XF',6)
@@ -2756,6 +2758,8 @@ C  transform Zai and Ztil matrices from QCMO to central MOs
       call matmmul2('ttxx2','MOcen','DPCIM','n','t','n')
       call tplustt(bl(idpcim),ncf)
       call matscal('DPCIM',half)
+C NZG
+      call matcopy('DPCIM','X3')
       call matrem('ttxx2')
       call matdef('zttemp','r',ncf,ncen)
       call matmmult('virt','Ztac','zttemp')
