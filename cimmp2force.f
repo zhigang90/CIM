@@ -803,10 +803,11 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-      if(iprint.ge.2) then
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
+      stop
 C
 C  build gradient vector
 C
@@ -1770,9 +1771,11 @@ C
 C   called from rphas2
 C
 C=============
-      dimension T(ncf,*),D(ncf,ncf),DDT(ncf,ncf)
+      dimension T(ncf,ncf),D(ncf,ncf),DDT(ncf,ncf)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
+C NZG
+      T=0.0D0
       fact=one4
       if(my.eq.lam) fact=one8
 C     dml=D(my,lam)*half*fact+DDT(my,lam)*one8
@@ -2421,7 +2424,7 @@ C
 c *****************
 c  Allocate memory
 C *****************
-C  First define some matrix for CIM calculation
+C  First define some matrices for CIM calculation
       call matdef('Zac','r',nvir,ncen) !Zac means Z_vir_cen block
       izac=mataddr('Zac')
       call matdef('Ztac','r',nvir,ncen)
@@ -2430,7 +2433,6 @@ C  First define some matrix for CIM calculation
       idpcim=mataddr('DPCIM')
       call matdef('ZtCIM','q',ncf,ncf)
       iztcim=mataddr('ZtCIM')
-    
 
       nstrip=nvir*nmo
       ictr=igetival('ictr')
