@@ -2586,27 +2586,27 @@ c
       dimension inx(*)
       parameter (zero=0.0d0)
       do lam=1,ncf
-        do imo=1,nval
-          dmaxj=zero
-          do jmo=1,nval
-            cj=abs(C(lam,jmo))
-            if(imo.ne.jmo) cj=cj*rfact(imo,jmo)
-              dmaxj=max(dmaxj,cj)
-          end do !j
-          dmaxi(lam,imo)=dmaxj
-        end do   !i
+         do imo=1,nval
+            dmaxj=zero
+            do jmo=1,nval
+               cj=abs(C(lam,jmo))
+               if(imo.ne.jmo) cj=cj*rfact(imo,jmo)
+               dmaxj=max(dmaxj,cj)
+            end do !j
+            dmaxi(lam,imo)=dmaxj
+         end do   !i
       end do     !lam
 c
       do my=1,ncf
-        do lam=1,my
-          dmxx=0.0d0
-          do imo=1,nval
-            cprod=abs(C(my,imo)*dmaxi(lam,imo))
-            dmxx=max(dmxx,cprod)
-          end do  !imo
-          D(my,lam)=dmxx
-          D(lam,my)=dmxx
-        end do    ! lam
+         do lam=1,my
+            dmxx=0.0d0
+            do imo=1,nval
+               cprod=abs(C(my,imo)*dmaxi(lam,imo))
+               dmxx=max(dmxx,cprod)
+            end do  !imo
+            D(my,lam)=dmxx
+            D(lam,my)=dmxx
+         end do    ! lam
       end do      ! my
 CPP
 c
@@ -2618,26 +2618,26 @@ C
       ictr=igetival('ictr')
       ipoint=0
       do ics=1,ncs
-        call get_shell_size(bl(ictr),ics,isize)
-        kpoint=0
-        do kcs=1,ncs
-          call get_shell_size(bl(ictr),kcs,ksize)
-          dmxs=0.0d0
-          do my=1,isize
-            do lam=1,ksize
-            dmx=D(ipoint+my,kpoint+lam)
-            dmxs=max(dmxs,dmx)
-          end do     !lam in kcs
-        end do     ! my in ics
-        kpoint=kpoint+ksize
+         call get_shell_size(bl(ictr),ics,isize)
+         kpoint=0
+         do kcs=1,ncs
+            call get_shell_size(bl(ictr),kcs,ksize)
+            dmxs=0.0d0
+            do my=1,isize
+               do lam=1,ksize
+                  dmx=D(ipoint+my,kpoint+lam)
+                  dmxs=max(dmxs,dmx)
+               end do     !lam in kcs
+            end do     ! my in ics
+            kpoint=kpoint+ksize
 ckw
-        dmxs=min(dmxs,1.d0)
+            dmxs=min(dmxs,1.d0)
 ckw
 ckw     DS(ics,kcs)=dmxs
-        DS(ics,kcs)=dmxs*dmxs
+            DS(ics,kcs)=dmxs*dmxs
 c
-      end do     ! kcs
-      ipoint=ipoint+isize
+         end do     ! kcs
+         ipoint=ipoint+isize
       end do     !ics
       end
 c======================================================================
