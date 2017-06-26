@@ -650,17 +650,14 @@ C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
 C NZG
-      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
 cc
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-C      endif
-C NZG
-      stop
+      endif
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -679,6 +676,7 @@ cc
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nsunit,ntri,
      1             bl(iwad),ncf)
 C
@@ -691,10 +689,11 @@ cc
          call matprint('W',6)
       endif
 cc
-      if(iprint.ge.2) then
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after W-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
+      stop
 C
 C   before returning calculate the MP2 dipole moments
       call matdef('dip','v',3,3)
