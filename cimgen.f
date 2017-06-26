@@ -962,7 +962,6 @@ C Then virtual MOs
          do j=1,KV
             FHH(KB+j)=VALU(j)
          enddo
-        
 C
          if (FHH(KB+1)<FHH(KB)) then
             write(iout,'(a,2f10.6)')
@@ -1298,7 +1297,7 @@ C     &                  "AO domain contains all the atoms!",0,0)
 C ***** Constructing the AAO domain of each atom in the AO domain *****
          allocate(J1_aao(J0),JF_aao(J0),BA_AAO(NATOM,J0))
          allocate(co1_aao(JF1,JF1))
-         maxdis=5
+         maxdis=7
 123      do j=1,J0
             do kzhi=2,maxdis
                do k=1,NATOM
@@ -1379,7 +1378,7 @@ C ***** Constructing the AAO domain of each atom in the AO domain *****
       
          call BASIS_REORDER(io,JF1,NATOM,ZA,nb,BA_FAO,nat_fao,JF_fao)
 
-         if (JF_fao>(JF1*90/100) .and. maxdis>4) then !NZG 2015/10/23 To avoid too large cluster
+         if (JF_fao>(JF1*90/100) .and. maxdis>6) then !NZG 2015/10/23 To avoid too large cluster
             maxdis=maxdis-1
             write(iout,*) "Warning: Number of basis functions over 90%."
             write(iout,'(" Message from cluster ",I5)') I

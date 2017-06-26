@@ -803,11 +803,10 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
-      stop
+      endif
 C
 C  build gradient vector
 C
@@ -821,25 +820,23 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
 C      call matcopy('DDT','XF')
-      call matcopy('X3','XF')
+C      call matcopy('X3','XF')
 C      call matscal('XF',-two)
-C      ixadr=mataddr('CIMX')
+      call matcopy('CIMX','XF')
       ixadr=mataddr('XF')
 C      call matprint('XF',6)
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
-      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
-ccNZG
-C      if(iprint.ge.2) then
+
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
+      endif
 C
-       stop
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
 C
@@ -1774,8 +1771,6 @@ C=============
       dimension T(ncf,ncf),D(ncf,ncf),DDT(ncf,ncf)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
 
-C NZG
-      T=0.0D0
       fact=one4
       if(my.eq.lam) fact=one8
 C     dml=D(my,lam)*half*fact+DDT(my,lam)*one8

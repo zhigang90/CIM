@@ -912,9 +912,9 @@ C --- MEMORY
       write(line,*) mwords
       call NJ_trim(line,k1,k2)
       if (calforce) then
-         line='%MEM=200'
-      else
          line='%MEM=500'
+      else
+         line='%MEM=300'
       endif
       write(inp,100) trim(line)
 C
@@ -923,8 +923,13 @@ C --- GEOMETRY
       call NJ_trim(charg,L1,L2)
       write(mulp,*) mult
       call NJ_trim(mulp,L3,L4)
-      line='GEOM=PQS '//'CHAR='//charg(L1:L2)//' MULT='//mulp(L3:L4)//
-     &     ' SYMM=0'
+      if (calforce) then
+         line='GEOM=PQS '//'NOOR '//'CHAR='//charg(L1:L2)//
+     &        ' MULT='//mulp(L3:L4)//' SYMM=0'
+      else
+         line='GEOM=PQS '//'CHAR='//charg(L1:L2)//' MULT='//
+     &        mulp(L3:L4)//' SYMM=0'
+      endif
       write(inp,100) trim(line)
 
       do k=1,snat
