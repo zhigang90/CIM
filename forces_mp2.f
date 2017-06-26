@@ -625,11 +625,10 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
         Write(iout,*) ' MP2 gradients after A2-terms'
         call torque(NAtoms,0,bl(inuc),gradv )
-C      endif
-      stop
+      endif
 C
 C  build gradient vector
 C
