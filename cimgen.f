@@ -1,7 +1,7 @@
-*************************************************
+C *****************************************************
 C *  generate Cluster-in-Molecule cluster input file  *
 C *  Modify the code from GAMESS                      *
-C *  NZG_4/16/2016 @UARK                              *
+C *  NZG_4/16/2016 @@UARK                             *
 C *****************************************************
 
 * -- LIST OF VARIABLES [integer] ---
@@ -169,8 +169,8 @@ C      character*4::ENTYP
 
 c Below are used for define the active space to calculate the
 C correlation energy
-C NZG_11/20/2016 @NJU
-C NZG_11/29/2016 @NJU --Combine active space to one cluster
+C NZG_11/20/2016 @@NJU
+C NZG_11/29/2016 @@NJU --Combine active space to one cluster
       logical,allocatable::act_atm(:),act_orb(:),high_atm(:)
       logical act,combine
       integer,allocatable::ncenatom(:),cenatom(:,:)
@@ -184,8 +184,8 @@ C Add force option for gradient calculation
 
 C Below are used for a new way of constructing virtual space: construct
 C PAOs with a cluster
-C NZG_4/7/2017 @UARK
-C Failed finally.... Zhigang 4/19/2017 @UARK
+C NZG_4/7/2017 @@UARK
+C Failed finally.... Zhigang 4/19/2017 @@UARK
       logical fpao,cpao
 
 C Add none frozen core option for none frozen core calculation
@@ -219,7 +219,7 @@ C hmtd: correlation level for high level subsystems
 C hdis: distance threshold for occupied orbitals treated by high level 
 C hatm: index of atoms in the high level regions
 C fpao: use PAOs of the whole system
-C cpao: construct PAOs within a cluster -NZG_4/7/2017 @UARK
+C cpao: construct PAOs within a cluster -NZG_4/7/2017 @@UARK
 C forc: force will be calculated. In this step, the FORCE option will be
 C       written to the input files of the subsystems
 
@@ -236,7 +236,7 @@ C       written to the input files of the subsystems
       combine=.false.
 
 C Add LMO version of CIM cluster calculation
-C NZG_10/6/2016 @NJU
+C NZG_10/6/2016 @@NJU
       motype='qcmo'
 
       fpao=.true.
@@ -483,7 +483,7 @@ C      write(6,*) density
 C If CIM-MP2 gradient is to be calculated, we need the information of
 C core orbitals. In this case, set nfocc as zero. It doesn't mean the
 C number of frozen core orbitals is zero.
-C NZG_4/27/2017 @UARK
+C NZG_4/27/2017 @@UARK
 C      if (calforce) then
 C         nfocc=0
 C      else
@@ -513,7 +513,7 @@ C
       endif
 
 C --- Determine the high level for multi-level calculation ---
-C --- NZG_12/20/2016 @NJU
+C --- NZG_12/20/2016 @@NJU
       allocate(high_atm(natom))
       high_atm=.false.
       if (ifound(8).gt.0) then
@@ -541,6 +541,10 @@ C --- NZG_12/20/2016 @NJU
             stop
          endif
       endif
+
+      write(iout,"(' MO DISTANCE THRESH:',f5.2)") dislmo
+      write(iout,"(' MO DISTANCE THRESH (high-level):',f5.2)") dislmo2
+      write(iout,*)
          
       call CalMPop(nprint,NATOM,nbas,nocc,nmo,SOVER,SMO,nbatm,batom,
      &             SR,SR1,SOB,atmlevl,molevl)
@@ -578,9 +582,6 @@ C  SOB(j,i)    : Label of atoms that jth occ MO distribute (l to s)
          if (act_atm(SOB(i,1))==.true.) act_orb(i)=.true.
       enddo
      
-      write(iout,"(' MO DISTANCE THRESH:',f5.2)") dislmo
-      write(iout,"(' MO DISTANCE THRESH (high-level):',f5.2)") dislmo2
-      write(iout,*)
       highorlow=0
       allocate(modis(nvalocc,nvalocc))
       do i=1+nfocc,nocc
@@ -596,6 +597,8 @@ C  SOB(j,i)    : Label of atoms that jth occ MO distribute (l to s)
      &                    norb_clu,molevl,dislmo,dislmo2,highorlow)
       call Reduce_Frag(nprint,nocc,nfocc,orb_clu,ncenorb,norb_clu,
      &                 nclu,molevl,act_orb)
+      write(6,"(' Final number of clusters:',I4)") nclu
+      write(6,*)
       allocate(ncenatom(nclu),cenatom(NATOM,nclu))
       ncenatom=0; cenatom=0
       do i=1,nclu
@@ -629,7 +632,7 @@ C ncenatom: number of central atoms in the cluster
 C cenatom:  labels of central atoms in the cluster
 
 C Remain only the clusters with active central atom
-C 11/20/2016_NZG @NJU
+C 11/20/2016_NZG @@NJU
       if (act==.true.) then
          nclu_act=0
          allocate(orb_clu_act(nvalocc,nclu),norb_clu_act(nclu))
@@ -802,7 +805,7 @@ C --- Print out the information of initial CIM cluster ---
       write(iout,*)
 
 C If using fpao type virtual orbitals, construct the PAOs for the 
-C whole system -NZG_4/7/2017 @UARK
+C whole system -NZG_4/7/2017 @@UARK
       if (fpao) then
          allocate(PAO(nbas,nbas))
          call dunit(nbas,PAO)
@@ -901,7 +904,7 @@ C
          if (nprint>0) write(nprint,*)'THE RMSD OF FIA:',PP
 C
 C Diagonalize the core and valence occupied orbitals separately.
-C NZG_5/17/2017 @UARK
+C NZG_5/17/2017 @@UARK
 C
 C First core occupied MOs
          allocate(MOS2(JF,NA))
@@ -1004,7 +1007,7 @@ C         TRANS=transpose(VECT(1:KK,1:KK))
 C
 C         KB=KK
 C --Normalize the QCMOs
-C --NZG_4/11/2017 @UARK
+C --NZG_4/11/2017 @@UARK
          call normorb(JF,NA,MOS2,S2(1:JF,1:JF))
          deallocate(S2)
  
@@ -1129,9 +1132,12 @@ C -- Write MO coefficients and orbital energies to XXX.mos file
          call WriteMOS(JF,NA,MOS2,FHH,.true.,lenM,mosname,itype)
 
 C If force is to be calculated, the coefficients of central orbitals are
-C needed. -NZG_5/22/2017 @UARK
+C needed. -NZG_5/22/2017 @@UARK
+C for debug
          if (calforce2) call WriteMOS(JF,ncen,MO_clu(1:JF,1:ncen),FHH,
      &                                .false.,lenM,cenname,itype)
+C         if (calforce2) call WriteMOS(JF,KB,MO_clu(1:JF,1:KB),FHH,
+C     &                                .false.,lenM,cenname,itype)
 
          deallocate(MOS2,FHH,MO_clu)
          call elapsec(tvir2)
@@ -1164,10 +1170,10 @@ C needed. -NZG_5/22/2017 @UARK
 
 C *****************************************************************
 C * --Constructing virtual space of the clusters (PAO basis)      *
-C *   Updated by NZG_2/26/2016 @UARK                              *
-C * --Change the name from COV to COV_FPAO -NZG_4/7/2017 @UARK    *
+C *   Updated by NZG_2/26/2016 @@UARK                              *
+C * --Change the name from COV to COV_FPAO -NZG_4/7/2017 @@UARK    *
 C * --Deal with core orbitals and do Schmidt orthogonalization if *
-C *   force is to be calculated. -NZG_4/27/2017 @UARK             *
+C *   force is to be calculated. -NZG_4/27/2017 @@UARK             *
 C *****************************************************************
       subroutine COV_FPAO(io,I,natom,nmo,nb,J0,JF,JF1,KB,KB1,nvext,
      &                    ncen,ncen1,ncore,ncore1,ML,BA,ZA,S,S2,SMO,
@@ -1203,7 +1209,7 @@ C JF1:           Number of basis functions of the whole molecule
 C S2:            Overlap of basis in the cluster at the beginning
 C --Change it to an input and output to get the overlap within the
 C --cluster to do normalization for the QCMOs
-C --Zhigang 4/11/2017 @UARK
+C --Zhigang 4/11/2017 @@UARK
 C S4:            Overlap of basis in the cluster
 C num_at_aao(:): Number of atoms in each AAO domain
 C BA_AAO(:,:):   Label of each atom in each AAO domain
@@ -1214,7 +1220,7 @@ C In the CIM-MP2 gradient calculation, we need the core orbitals.
 C Get the number of core orbitals in the cluster and rearrange the
 C orbitals. The order of the orbitals:
 C central valence -> buffer valence -> core -> PAOs
-C NZG_4/27/2017 @UARK
+C NZG_4/27/2017 @@UARK
 
 C ncen:   Number of central valence orbitals in the cluster 
 C ncen1:  Number of cent orbitals of the cluster including core orbitals
@@ -1503,7 +1509,7 @@ C ************************************************************
 C * Constructing virtual space of the clusters (PAO basis)   *
 C * In this way, PAOs are constructed within a cluster, by   *
 C * projecting out the occupied space of the cluster.        *
-C * NZG_4/7/2017 @UARK                                       *
+C * NZG_4/7/2017 @@UARK                                       *
 C ************************************************************
       subroutine COV_CPAO(io,I,natom,nmo,nb,J0,JF,JF1,KB,ncen,KB1,
      &                    ncoreocc,nvext,ML,BA,ZA,S,S2,SMO,MOS1,dis,
@@ -1541,7 +1547,7 @@ C Get the number of core orbitals in the cluster and rearrange the core
 C orbitals.
 C For Schmidt orthogonalization, the order should be
 C central valence -> beffer valence -> core
-C NZG_4/18/2017 @UARK
+C NZG_4/18/2017 @@UARK
       ncore1=0
       do k=1,KB
          if (ML(k)<=ncoreocc) ncore1=ncore1+1
@@ -1658,7 +1664,7 @@ C Schmidt orthogonalization should be used.
 
 C Construct PAOs within this cluster by projecting out the occupied
 C space of this cluster.
-C -NZG_4/12/2017 @UARK
+C -NZG_4/12/2017 @@UARK
       
       allocate(PAO(JF,JF))
       call dunit(JF,PAO)
@@ -2597,7 +2603,7 @@ C
 C 110  LN=0
 C      end
 C
-CC     2004.04.16 find number of no-blank char in line(ini:ifi)(length<=100) #liwei@itcc
+CC     2004.04.16 find number of no-blank char in line(ini:ifi)(length<=100) #liwei@@itcc
 C      function Nchar(line,ini,ifi)
 C      character line*(*)
 C      Nchar=0

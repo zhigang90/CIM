@@ -2112,8 +2112,9 @@ C *********************************************************************
 
       do i=1,n
          do j=1,m
-            if (abs(a(i,j)-b(i,j))>1.0d06) then
+            if (abs(a(j,i)-b(j,i))>1.0d06) then
                same=0
+               write(6,*) a(j,i),b(j,i)
                return
             endif
          enddo

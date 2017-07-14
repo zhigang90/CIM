@@ -2993,7 +2993,6 @@ c
             mapf2s(icf)=ics
          enddo
       enddo
-c
       end
 c======================================================================
       subroutine get_small_basis(bl,ncs_bg,ncf_bg,inx_bg,ncs_sm,ncf_sm)

@@ -342,7 +342,7 @@ C  remove matrices for temporary storage
 C
 C  the matrices X, and W, and several contributions to Y
 C  are in X, W, Aik, and Y, respectively
-C
+CC
       if(iprint.ge.6) then
         call matprint('X',6)
         call matprint('W',6)
@@ -384,7 +384,6 @@ C       call matprint('Gmat',6)
         write(iout,*) ' Y before D1-terms:'
         call matprint('Y',6)
       endif
-cc
       call retmark                                !gmat
       call matrem('Gmat')
       call secund(tgm2)
@@ -1942,7 +1941,7 @@ c
 c  return if there are no integrals
       if(nrow.eq.0.or.ncol.eq.0) RETURN
 c
-       dblcmp = dblmax*thresh
+      dblcmp = dblmax*thresh
 c
 c  icol and jcol store integer arrays which  hold the indices
 c  of the non-zero elements of the AO exchange matrix X=(mu,nu|lam,isig)
@@ -2969,11 +2968,11 @@ C  accumulates D1 contributions in matrix Y ( Eq. 46)
       call matmmul2('Tmyl','quartra', 'tqtr','t','n','n')
       ix=0
       do ia=1,ncol
-      ny=icol(ia)
-      do ii=1,nval
-      ix=ix+1
-      Y(ny,ii)=Y(ny,ii)+bl(itqta+ix)
-      enddo
+         ny=icol(ia)
+         do ii=1,nval
+            ix=ix+1
+            Y(ny,ii)=Y(ny,ii)+bl(itqta+ix)
+         enddo
       enddo
       call matrem('tqtr')
       end
@@ -2991,11 +2990,11 @@ C  accumulates D1 contributions in matrix Y ( Eq. 46)
       call matmmul2('Tmyl','quartr2', 'tqtr','n','t','n')
       ix=0
       do ia=1,nrow
-      ny=irow(ia)
-      do jj=1,nval
-      ix=ix+1
-      Y(ny,jj)=Y(ny,jj)+bl(itqta+ix)
-      enddo
+         ny=irow(ia)
+         do jj=1,nval
+            ix=ix+1
+            Y(ny,jj)=Y(ny,jj)+bl(itqta+ix)
+         enddo
       enddo
       call matrem('tqtr')
       end

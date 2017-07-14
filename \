@@ -52,6 +52,11 @@ C               whole system
       write(iout,10)
       write(iout,"(15x,' The Module of CIM Cluster Force Calculation')")
       write(iout,*)
+
+C NZG for debug
+      ncen=nmo
+
+
 C
 C  currently only closed-shell MP2 gradients are available
       If(.NOT.rhf) Call nerror(1,'CIM MP2 GRADIENT module',
@@ -147,11 +152,11 @@ C order. -NZG_5/22/2017 @UARK
          enddo
       enddo
 
-C      write(6,*) "Basis functions correspondence!"
-C      write(6,*) "KW order     Atom order"
-C      do i=1,ncf
-C         write(6,"(2I8)") i,Z(i)
-C      enddo
+      write(6,*) "Basis functions correspondence!"
+      write(6,*) "KW order     Atom order"
+      do i=1,ncf
+         write(6,"(2I8)") i,Z(i)
+      enddo
 
       deallocate(dtmp,Fock1,tmp,Ccen1)
            
@@ -834,19 +839,26 @@ C
 C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
-      call matcopy('CIMX','XF')
+C NZG
+C      call matcopy('CIMX','XF')
+      call matprint('X1',6)
+      call matscal('X1',two)
+      call matcopy('X1','XF')
       ixadr=mataddr('XF')
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
+C NZG
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1              bl(ixadr),ncf)
       call matrem('XF')
 
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -885,6 +897,9 @@ cc
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
+C NZG
+      call matprint('CIMW',6)
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nsunit,ntri,
      1              bl(icimw),ncf)
 C
@@ -897,10 +912,12 @@ cc
          call matprint('W',6)
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
           Write(iout,*) ' MP2 gradients after W-terms:'
           call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
+       stop
 C
 C   before returning calculate the MP2 dipole moments
 C      call matdef('dip','v',3,3)
@@ -923,12 +940,22 @@ c
      1              bl,bl(ictr),bl(idmp2),bl(igmp2))
       call retmark
 c
+c     call saveDmp2(ntri,1)
+c
       np4=4
       call matwrite('DDT',np4,0,'dens_mp2')
       call matwrite('GMP2',np4,0,'gock_mp2')
+ccc   call matwrite('DDT',np4,0,'den0_rhf')
+ccc   call matwrite('GMP2',np4,0,'fock_rhf')
 c
       call matrem('GMP2')
 c
+ckw2008kw2008kw2008kw2008kw2008kw2008kw2008kw2008-----
+c
+c
+C  calculation finished
+C  release all memory
+C
       call retmark
 cc
       if(iprint.ge.2) then
@@ -1921,7 +1948,6 @@ C
       real*8,allocatable::Ttilqcmo(:,:,:),Ttilqcmo2(:,:)
       real*8,allocatable::Tij_LMO(:,:,:,:),T4_LMO(:,:,:,:)
       real*8,allocatable::Ttil_LMO(:,:,:,:),Tji_LMO(:,:,:,:)
-      real*8,allocatable::Tab_LMO(:,:,:,:),Tba_LMO(:,:,:,:)
       real*8,allocatable::Kqcmo(:,:,:,:),K_LMO(:,:,:,:)
 C   Here some of the names contain '4'. Actually it is from the name
 C   Tsum4. So I also use '4' in the names. -NZG_6/9/2017
@@ -2081,7 +2107,9 @@ cc
 
       allocate(Tij_LMO(ncen,nval,nvir,nvir),T4_LMO(ncen,nval,nvir,nvir))
       allocate(Ttil_LMO(nval,ncen,nvir,nvir))
+      allocate(Tji_LMO(nval,ncen,nvir,nvir))
       allocate(K_LMO(ncen,nval,nvir,nmo))
+C      T_LMO=0.0D0; Ttil_LMO=0.0D0
       do k=1,nvir
          do l=1,nvir
             ij=0
@@ -2104,23 +2132,27 @@ cc
             enddo
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,Tqcmo2,nval,0.0D0,Tij_LMO(:,:,l,k),ncen)
-C            Tij_LMO(:,:,l,k)=matmul(Tij_LMO(:,:,l,k),trans)
-            call matmul_mkl(Ttilqcmo2,trans(:,1:ncen),Ttil_LMO(:,:,l,k),
-     &                      nval,nval,ncen)
-C            Ttil_LMO(:,:,l,k)=matmul(transpose(trans),Ttil_LMO(:,:,l,k))
+            call dgemm('T','N',nval,ncen,nval,1.0D0,Tqcmo2,nval,
+     &                 trans(:,1:ncen),nval,0.0D0,Tji_LMO(:,:,l,k),nval)
+C            call matmul_mkl(Ttilqcmo2,trans(:,1:ncen),Ttil_LMO(:,:,l,k),
+C     &                      nval,nval,ncen)
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,T4qcmo2,nval,0.0D0,T4_LMO(:,:,l,k),ncen)
-C            T4_LMO(:,:,l,k)=matmul(T4_LMO(:,:,l,k),trans)
             deallocate(Tqcmo2,Ttilqcmo2,T4qcmo2)
+            do ii=1,ncen
+               do jj=1,nval
+                  Ttil_LMO(jj,ii,l,k)=two*Tji_LMO(jj,ii,l,k)-
+     &                                    Tji_LMO(jj,ii,k,l)
+               enddo
+            enddo
          enddo
       enddo
-      deallocate(Tqcmo,Ttilqcmo)
+      deallocate(Tqcmo,Ttilqcmo,Tji_LMO)
 
       do k=1,nmo
          do l=1,nvir
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &           nval,Kqcmo(:,:,l,k),nval,0.0D0,K_LMO(:,:,l,k),ncen)
-C            K_LMO(:,:,l,k)=matmul(K_LMO(:,:,l,k),trans)
          enddo
       enddo
       deallocate(Kqcmo)
