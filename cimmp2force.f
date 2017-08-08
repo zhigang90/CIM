@@ -147,13 +147,17 @@ C order. -NZG_5/22/2017 @UARK
          enddo
       enddo
 
+      call matdef('ccen','q',ncf,ncen)
+      iccen=mataddr('ccen')
+      call matcopy_cim(Ccen,bl(iccen),ncf,ncen)
+
 C      write(6,*) "Basis functions correspondence!"
 C      write(6,*) "KW order     Atom order"
 C      do i=1,ncf
 C         write(6,"(2I8)") i,Z(i)
 C      enddo
 
-      deallocate(dtmp,Fock1,tmp,Ccen1)
+      deallocate(dtmp,Fock1,tmp,Ccen,Ccen1)
            
       call matdef('ovla','s',ncf,ncf)
       lovla=mataddr('ovla')
@@ -170,6 +174,7 @@ c -- save pointers in depository
       call setival('lfock0',lfock0)
       call setival('lvec',lvec)
       call setival('lval',lval)
+      call setival('ncen',ncen)
       nocc=nmo
       call setival('nocc',nocc)
 
@@ -213,7 +218,7 @@ c  check if the basis set contains L-shells
 c  and if it does then make S,P partitioning
 c
 C      call retmem(1)
-      call trans_l_2_sp(rhf,bl,bl(ictr),ictr,lshell,'mp2grad')
+      call trans_l_2_sp(rhf,bl,bl(ictr),ictr,lshell,'cimmp2grad')
 c
 c ictr is changed on return if l-shells are present
 c
@@ -226,6 +231,7 @@ c-----------------------------------------------------------------
 c allocate memory for an array showing if a big bs shell 
 c was present (0 or 1) in a small bs
 c
+      ncs=igetival('ncs')
       call getint(ncs,mpres_in_bg)
       call setival('mpres_in_bg',mpres_in_bg)
 c
@@ -240,7 +246,7 @@ C zero-out the two-electron contributions to the force
       call zeroit(bl(lforc2),natom*3)
 
       call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
-     &                  bl(lforc2),ncore,trans,Ccen,ncen,iatom)
+     &                  bl(lforc2),ncore,trans,bl(iccen),ncen,iatom)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -540,7 +546,6 @@ C
 C  the matrices X, and W, and several contributions to Y
 C  are in X, W, Aik, and Y, respectively
 C
-C NZG
       if(iprint.ge.6) then
          call matprint('X',6)
          call matprint('W',6)
@@ -1082,15 +1087,6 @@ c  irec is the current counter in the file
       nrec=0
       irec=0
 c
-c---------------------------------------------------
-c     if(dualbasis) then
-c  update content of "basis sets" according to current needs
-c  i.e. put small basis set into "basis 2" & "basis 4"
-c
-c       call update_basis(bl,ncs_sm)
-c     endif
-c---------------------------------------------------
-c
       elapint=0.0d0
       call secund(tt3)
       call elapsec(telap3)
@@ -1190,6 +1186,7 @@ c
      &                             iprint,bl(lmp2int),nintotal,nrow,
      &                             ncol,bl(irow),bl(icol),bl(lzero))
                      call retmark
+
                      if (nintotal.eq.0) then
                         call retmem(1)
                         cycle
@@ -2070,7 +2067,6 @@ C
 C  Finally transform to AO basis and save
 C
       call matsimtr('Tsum1','tvir','X')
-      if (iprint==2) call matprint('X',6)
       call matsimtr('Tsum2','tvir','W1')
       call matsimtr('Tsum4','tvir','W2')
 cc
@@ -2145,7 +2141,6 @@ C      call X1term_CIM2(ncen,nval,nvir,bl(iXvv),T_LMO,Ttil_LMO,Sab)
       call matsimtr('Xvv','tvir','X1')
       call matsimtr('EW1vv','tvir','CIMW1')
       call matsimtr('EW2vv','tvir','CIMW2')
-C      call matprint('X1',6)
 C      call matprint('CIMW1',6)
 C      call matprint('CIMW2',6)
 C

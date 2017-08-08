@@ -595,6 +595,9 @@ c  release memory
       call retmark
       call matrem('halftra')
       call matrem('xmat')
+C NZG
+      write(6,*) 'HERE'
+      
 c......................................................................
       write(iout,61)
    61 format(' CPU & Elapsed timings in the MP2 module ')

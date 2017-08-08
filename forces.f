@@ -858,6 +858,33 @@ c
          call retmem(1)
          return
       endif  !  if(called4.eq.'mp2grad') then
+
+C Add by Zhigang for CIM-MP2 gradient calculation. Reorder Ccen matrix
+C NZG_8/7/2017 @UARK
+      if(called4.eq.'cimmp2grad') then
+         lden=mataddr('den0')
+         call getmem(ntri, lden_sp)
+         call make_sp_den(bl(ireor),ncf,bl(lden),bl(lden_sp))
+         call retmem(1)
+         lfoc=mataddr('fock')
+         call getmem(ntri, lfoc_sp)
+         call make_sp_den(bl(ireor),ncf,bl(lfoc),bl(lfoc_sp))
+         call retmem(1)
+         lovl=mataddr('ovla')
+         call getmem(ntri, lovl_sp)
+         call make_sp_den(bl(ireor),ncf,bl(lovl),bl(lovl_sp))
+         call retmem(1)
+         lvec=mataddr('cano')
+         call getmem(ncf*ncf,lvec_sp)
+         call make_sp_eig(bl(ireor),ncf,bl(lvec),bl(lvec_sp))
+         call retmem(1)
+         lcen=mataddr('ccen')
+         call getival('ncen',ncen)
+         call getmem(ncf*ncen,lcen_sp)
+         call make_sp_cen(bl(ireor),ncf,ncen,bl(lcen),bl(lcen_sp))
+         call retmem(1)
+         return
+      endif  !  if(called4.eq.'mp2grad') then
 c
 c-----------------------------------------------------------
 c...........................................................
@@ -1334,6 +1361,28 @@ c
       enddo
 c
       call dcopy(ncf*ncf,vec_sp(1),1,vec(1),1)
+c
+      end
+c======================================================================
+C Modify the original make_sp_eig routine. For reordering the
+C coefficients of central orbitals in CIM calculation.
+C NZG_8/7/2017 @UARK
+      subroutine make_sp_cen(ireor,ncf,ncen,vec, vec_sp)
+      implicit real*8 (a-h,o-z)
+      dimension vec(*)            ! inp: lsh  / out: sp shell
+      dimension vec_sp(*)
+      dimension ireor(ncf)
+c
+      do jor=1,ncen
+         je=jor*ncf
+         ja=je-ncf
+         do j=1,ncf
+            jnew=ireor(j)
+            vec_sp(ja+jnew)=vec(ja+j)
+         enddo
+      enddo
+c
+      call dcopy(ncf*ncen,vec_sp(1),1,vec(1),1)
 c
       end
 c======================================================================

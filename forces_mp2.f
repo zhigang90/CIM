@@ -637,6 +637,8 @@ C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('DDT','XF')
       ixadr=mataddr('XF')
+C NZG
+      call matprint('XF',6)
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
@@ -657,12 +659,16 @@ C
          call matprint('W',6)
       endif
 cc
+C NZG
+      call matprint('Y',6)
       call matdef('DY','r',ncf,nmo)
       call matmmult('den0','Y','DY')
       call matscal('DY',-onef)
       call matmmul2('DY','occa','W','n','t','a')
       call matrem('DY')
       iwad=mataddr('W')
+C NZG
+      call matprint('W',6)
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
@@ -1804,6 +1810,7 @@ c
      &                             iprint,bl(lmp2int),nintotal,nrow,
      &                             ncol,bl(irow),bl(icol),bl(lzero))
                      call retmark
+
                      if (nintotal.eq.0) then
                         call retmem(1)
                         cycle

@@ -488,6 +488,7 @@ c---------------------------------------------------------------
 c     write(ioutput,*)'-----------------------------------------'
 c     write(ioutput,*)' Blocks of Shell-Pairs  (blk_pairs_makx) '
 c
+
       ijpar_sum=0
       IF(NBL1_1.GE.NBL1_2) THEN
          ijblock=0             !    blocks counter

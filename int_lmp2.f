@@ -179,30 +179,30 @@ c        to zero if there are no integrals
 CKW.....................................................
 c
 c        integrals arrived in bl(ibuffz); check if they are :
-         if(nintez.gt.0) then
-              nintotal=nintotal+nintez*ngctoz*nblsiz
-              call get_lab123(nblsiz,ngctoz,lab1,lab2,lab3)
+         if (nintez.gt.0) then
+            nintotal=nintotal+nintez*ngctoz*nblsiz
+            call get_lab123(nblsiz,ngctoz,lab1,lab2,lab3)
 c
 c             put "lmp2" integrals into xmp2int array
 c
-           if(ngctoz.eq.1) then   !     segmented basis set
-            if(icsh.eq.kcsh) then
-              call lmp2Ebldx(ncf,  bl(ibuffz), nblsiz, ngctoz, nintez,
-     *          labels(lab1),labels(lab2),labels(lab3),mapf2s, icsh,
+            if (ngctoz.eq.1) then   !     segmented basis set
+               if (icsh.eq.kcsh) then
+                  call lmp2Ebldx(ncf,bl(ibuffz), nblsiz, ngctoz, nintez,
+     *               labels(lab1),labels(lab2),labels(lab3),mapf2s,icsh,
      *                        kcsh, irow, icol, xmp2int,
      *                        icf1,icf2, kcf1,kcf2, lzero)
-            else
-              call lmp2Nbldx(ncf,  bl(ibuffz), nblsiz, ngctoz, nintez,
-     *          labels(lab1),labels(lab2),labels(lab3),mapf2s, icsh,
+               else
+                  call lmp2Nbldx(ncf, bl(ibuffz), nblsiz, ngctoz,nintez,
+     *            labels(lab1),labels(lab2),labels(lab3),mapf2s, icsh,
+     *                        kcsh, irow, icol, xmp2int,
+     *                        icf1,icf2, kcf1,kcf2, lzero)
+               endif
+            else                    !    general contracted basis set
+               call lmp2_bldx(ncf,  bl(ibuffz), nblsiz, ngctoz, nintez,
+     *             labels(lab1),labels(lab2),labels(lab3),mapf2s, icsh,
      *                        kcsh, irow, icol, xmp2int,
      *                        icf1,icf2, kcf1,kcf2, lzero)
             endif
-           else                    !    general contracted basis set
-              call lmp2_bldx(ncf,  bl(ibuffz), nblsiz, ngctoz, nintez,
-     *          labels(lab1),labels(lab2),labels(lab3),mapf2s, icsh,
-     *                        kcsh, irow, icol, xmp2int,
-     *                        icf1,icf2, kcf1,kcf2, lzero)
-           endif
          endif
 c----------------------------------------------------------------
          if(moreint) go to 22
