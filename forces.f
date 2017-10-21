@@ -884,7 +884,7 @@ C NZG_8/7/2017 @UARK
          call make_sp_cen(bl(ireor),ncf,ncen,bl(lcen),bl(lcen_sp))
          call retmem(1)
          return
-      endif  !  if(called4.eq.'mp2grad') then
+      endif  !  if(called4.eq.'cimmp2grad') then
 c
 c-----------------------------------------------------------
 c...........................................................

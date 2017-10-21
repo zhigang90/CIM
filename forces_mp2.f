@@ -25,7 +25,7 @@ C  currently only closed-shell MP2 gradients are available
      $   'Sorry - Open-Shell MP2 gradients currently Unavailable',0,0)
 C
 C  set values appropriate for integral derivatives during MP2
-      limxmem=2 000 000
+      limxmem=2000000
       limblks=300
       limpair=100
 C
@@ -286,6 +286,9 @@ C      call matsub('evir','epsi',nmo+1,ncf)
       call matsub('Yp','Y',ncore+1,nmo)
       iypadr=mataddr('Yp')
 C     call memory_status('Yp')
+C  NZG test CAC term
+      call matdef('CAC','s',ncf,ncf)
+      call matdef('CZC','q',ncf,ncf)
       call matdef('DDT','s',ncf,ncf)
       call matdef('W','q',ncf,ncf)
       call matdef('X','s',ncf,ncf)
@@ -619,10 +622,12 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
         Write(iout,*) ' MP2 gradients after A2-terms'
         call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
+      stop
 C
 C  build gradient vector
 C
@@ -637,8 +642,13 @@ C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('DDT','XF')
       ixadr=mataddr('XF')
-C NZG
-      call matprint('XF',6)
+
+C NZG test X2 term
+C      call matdef('XF','q',ncf,ncf)
+C      call matcopy('CAC','XF')
+C      call matscal('XF',-two)
+C      ixadr=mataddr('CZC')
+
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
@@ -659,16 +669,15 @@ C
          call matprint('W',6)
       endif
 cc
-C NZG
-      call matprint('Y',6)
       call matdef('DY','r',ncf,nmo)
       call matmmult('den0','Y','DY')
       call matscal('DY',-onef)
       call matmmul2('DY','occa','W','n','t','a')
       call matrem('DY')
       iwad=mataddr('W')
+
 C NZG
-      call matprint('W',6)
+      gradv=0.0D0
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
@@ -684,10 +693,12 @@ cc
          call matprint('W',6)
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after W-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
+      stop
 C
 C   before returning calculate the MP2 dipole moments
       call matdef('dip','v',3,3)
@@ -990,6 +1001,8 @@ c     call matprint('Y',6)
 C  calculate the "density matrix' DDT=2[X-CAC] to be used for
 C  construction of matrix G(DDT)
       call matmmul2('CA','occu','DDT','n','t','n')
+C NZG
+      call matcopy('DDT','CAC')
       call matadd1('X',-one,'DDT')
       call matscal('DDT',-two)
       call matrem('CA')
@@ -1464,7 +1477,9 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+C NZG
+
+C                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
                   call secund(ttbt3)
@@ -3417,7 +3432,7 @@ C   Arguments:
 C   ncf           number of contracted basis functions
 C   nval          number of valence orbitals
 C   nvir          number of virtual orbitals
-C   ei(*)         orbital energies occupied prbital
+C   ei(*)         orbital energies occupied orbital
 C   ea(*)         orbital energies virtual orbitals
 C   y(nvir,nval)  INPUT matrix y.  Note this matrix is generated from the
 C                 original Y(ncf,nval):  y=Cv *Y (done in the calling
@@ -3732,6 +3747,8 @@ C  Frozen core:
          call matscal('zicao',half)
          call matadd('zicao','DDT')
       endif
+C NZG
+      call matcopy('dptm','CZC')
 C  end of first term frozen core
 C
 C  also -1/2 DG(Z)D should be added to W before contracting with Sx

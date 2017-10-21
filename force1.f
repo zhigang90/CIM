@@ -34,6 +34,13 @@ c
 c COSMO stuff
 c
       character*100 cerm
+
+C For CIM calculation. -NZG
+      logical cim
+      character*4 chopv
+      character filefockder*256
+      character scrfile*256
+      real*8,allocatable::temp(:,:)
 c
       call secund(tgrad1)
       call elapsec(elagrad1)
@@ -74,6 +81,45 @@ c
         call forcepr(na,bl(lforc3),'nucrep')
       end if
 c------------------------------------------------------------------
+
+c Check if CIM is the next step. If CIM force is to be calculated,
+c the kinetic and electron-nuclear attraction contributions will be
+c added up and stored.
+c NZG_10/11/2017 @UARK
+      cim=.false.
+      read(inp,'(A4)',end=95) chopv
+      call lowercas(chopv,4)
+      if (chopv=='cim ') cim=.true.
+      backspace inp
+95    continue
+
+      if (cim) then
+         call getmem(na*3*ntri,lfock1)
+         call setival('lfock1',lfock1)
+         call zeroit(bl(lfock1),na*3*ntri)
+
+         call getint(na,listreal)
+         call setup_listreal(na,bl(listreal))
+
+C For simple programming, I directly use the way of calculating the
+C integrals in MP2 force. In this case, they will be calculated twice.
+         call intonFder(1,na,inx,ifield,ifgrad,elfiel,bl(ibas),bl(inuc),
+     &                  ncs,ncf,ntri,bl(listreal),bl(lfock1))
+         call elenuc_Fder(na,1,na,inx,bl(ibas),bl(inuc),ncs,ncf,ntri,
+     &                    bl(listreal),bl(lfock1))
+C         call fder_print(bl(lfock1),na,ntri,1.d0)
+         call getchval('scrf',scrfile)
+         call rmblan(scrfile,256,len)
+         filefockder=scrfile(1:len)//'.fock1'
+         lrec=3*ntri*8
+         nfockfile=723
+         open(unit=nfockfile,file=filefockder,form='unformatted',
+     &        access='direct',recl=lrec)
+         allocate(temp(ntri,3))
+         call trsp_disk(nfockfile,na,ntri,temp,bl(lfock1))
+         close(unit=nfockfile,status='keep')
+      endif
+
 c Calculate S1 & T1 (overlap & kinetic) derivative integrals
 c
       call intof(na,inx,ifield,ifgrad,elfiel,

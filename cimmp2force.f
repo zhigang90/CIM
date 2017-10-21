@@ -33,6 +33,7 @@ c
 
       dimension trans(nmo,nmo)
       integer,allocatable::IAN(:),Z(:),ILST(:,:),INX2(:,:),iatom(:)
+      integer,allocatable::KW2atom(:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
       real*8,allocatable::tmp(:),SOVER(:,:),Ccen(:,:),Ccen1(:,:)
       character*8,allocatable::AtSymb(:)
@@ -96,7 +97,7 @@ C  Fock matrix should be read from the XXX.cim file
      $      FORM='FORMATTED',STATUS='OLD')
       call rdcoord(IUnit,NAtom,AtSymb,XC,-1,jnk) ! In Bohr
       CLOSE(UNIT=IUnit,STATUS='KEEP')
-
+       
 C  get atomic numbers from atomic symbols
       CALL GetAtNo(NAtom,AtSymb,IAN)
       call GetAtChrg(NAtom,QA)
@@ -157,7 +158,7 @@ C      do i=1,ncf
 C         write(6,"(2I8)") i,Z(i)
 C      enddo
 
-      deallocate(dtmp,Fock1,tmp,Ccen,Ccen1)
+      deallocate(dtmp,Fock1,tmp,Ccen1)
            
       call matdef('ovla','s',ncf,ncf)
       lovla=mataddr('ovla')
@@ -166,6 +167,10 @@ C      enddo
      &            IAN,ncs,ncs,ncf,ncf,tmp)
        
       call ReorderFock3(ncf,Z(1),SOVER,bl(lovla))
+
+      allocate(KW2atom(ncf))
+      KW2atom(1:ncf)=Z(1:ncf)
+
       deallocate(tmp,Z)
 
 c -- save pointers in depository
@@ -186,15 +191,30 @@ C      iqs=mataddr('qs')
 C      call MO_over(Sij,bl(lvec),bl(iqs),nocc,ncf)
 C      write(6,*) Sij
 
+C Test central orbital coefficients from QCMO and from local disk
+C NZG_9/18/2017 @UARK
+C      allocate(CTran(ncf,ncen))
+C      call matmul_mkl(bl(lvec),trans(:,1:ncen),CTran,ncf,nocc,ncen)
+C      write(6,*) Ctran(:,1)
+C      write(6,*) Ccen(:,1)
+C      do i=1,ncf
+C         do j=1,ncen
+C            if ((CTran(i,j)-Ccen(i,j))>1.0D-6) then
+C               write(6,*) 'central coefficient error'
+C               stop
+C            endif
+C         enddo
+C      enddo
+
 C calculate overlap matrices between virtual orbitals
 C NZG_7/6/2017 @UARK
-C      allocate(Sab(nvirt,nvirt))
-C      ivirt=mataddr('virt')
-C      call matdef('QS','q',ncf,ncf)
-C      call matcopy('ovla','QS')
-C      iqs=mataddr('QS')
-C      call MO_over(Sab,bl(ivirt),bl(iqs),nvirt,ncf)
-C      call matrem('QS')
+      allocate(Sab(nvirt,nvirt))
+      ivirt=mataddr('virt')
+      call matdef('QS','q',ncf,ncf)
+      call matcopy('ovla','QS')
+      iqs=mataddr('QS')
+      call MO_over(Sab,bl(ivirt),bl(iqs),nvirt,ncf)
+      call matrem('QS')
 
 C calculate density matrix from the MO coefficients
 C NZG_5/4/2017 @UARK
@@ -204,15 +224,6 @@ C NZG_5/4/2017 @UARK
       
       call NJ_denmat_sym(ncf,ncf,nocc,bl(lvec),bl(lden))
 C      call matprint('den0',6)
-
-C calculate density matrix from only the central MOs
-C NZG_6/1/2017 @UARK
-C      call matdef('dencen','s',ncf,ncf)
-C      ldencen=mataddr('dencen')
-C      call setival('ldencen',ldencen)
-C      call NJ_denmat_sym(ncf,ncf,ncen,Ccen,bl(ldencen))
-C      call matprint('dencen',6)
-C --It is not used actually.
 
 c  check if the basis set contains L-shells
 c  and if it does then make S,P partitioning
@@ -246,7 +257,8 @@ C zero-out the two-electron contributions to the force
       call zeroit(bl(lforc2),natom*3)
 
       call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
-     &                  bl(lforc2),ncore,trans,bl(iccen),ncen,iatom)
+     &                  bl(lforc2),ncore,trans,bl(iccen),ncen,iatom,Sab,
+     &                  KW2atom)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -280,7 +292,7 @@ c ...........................................................
 C ====================================================================== 
       subroutine mp2_grad_cim(ncf,    nval,   nvir,   iprint, thresh,
      1                        nmo,    natoms, gradv,  ncore,  trans,
-     2                        Ccen,   ncen,   iatom)
+     2                        Ccen,   ncen,   iatom,  Sab,    KW2atom)
 C
 C  Main routine for CIM-MP2-gradients. 
 C  In CIM we don't release memory after energy calculation. Some of the
@@ -322,8 +334,11 @@ C
       implicit real*8(a-h,o-z)
 c     common /big/bl(30000)
 c     common /intbl/maxsh,inx(100)
+      character*256 jobname
+      common /job/ jobname,lenJ
       dimension gradv(3,natoms)
       dimension trans(nmo,nmo),Ccen(ncf,ncen),iatom(natoms)
+      dimension Sab(nvir,nvir),KW2atom(ncf)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
@@ -531,7 +546,7 @@ C  X Eq. 19; A Eq. 21, W Eq. 58 or 60; Y Eq.59 or 61
      1                  iprint,   thresh,bl(iatij),bl(ittij),bl(ibuf),
      2                  bl(i1),   gradv, natoms,   bl(ibuf), bl(i1),
      3                  bl(iovka),ncore, nmo,      iscs,     ncen,
-     4                  trans,    Ccen)
+     4                  trans,    Ccen,  Sab)
       call retmark
       call retmem(2)
 C  remove matrices for temporary storage
@@ -719,6 +734,8 @@ C
 C  calculate Fx and Sx and write to disk
       nfunit=39
       nsunit=40
+C NZG
+      nfunit2=44
       call mmark
       call FxSx(natoms,iprint,nfunit,nsunit)
       call retmark
@@ -823,10 +840,12 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
+      stop
 C
 C  build gradient vector
 C
@@ -841,11 +860,20 @@ C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('CIMX','XF')
       ixadr=mataddr('XF')
+
+C NZG_Test X1 contribution to the force
+C      call matscal('X2',-two)
+C      ixadr=mataddr('X3')
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
-      call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
-     1              bl(ixadr),ncf)
+
+      open(unit=nfunit2,file=jobname(1:lenJ)//'.fock1',
+     &     form='unformatted',access='direct',recl=24*ntri,status='old')
+
+C      write(6,'(20I4)') KW2atom
+      call Makegrad_CIM(natoms,gradv,bl(ifxsx),nfunit2,ntri,
+     1                  bl(ixadr),ncf,KW2atom)
       call matrem('XF')
 
       if(iprint.ge.2) then
@@ -887,6 +915,9 @@ cc
       call matrem('DYCIM')
       call matrem('CIMY')
       icimw=mataddr('CIMW')
+
+C NZG
+      gradv=0.0D0
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
@@ -902,10 +933,12 @@ cc
          call matprint('W',6)
       endif
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
           Write(iout,*) ' MP2 gradients after W-terms:'
           call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
+      stop
 C
 C   before returning calculate the MP2 dipole moments
 C      call matdef('dip','v',3,3)
@@ -1589,7 +1622,8 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-                  call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+C NZG
+C                  call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
                   call secund(ttbt3)
@@ -1789,86 +1823,12 @@ c
       end
       
 
-C ======================================================================
-      subroutine Aterms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
-     $                      nvrsq,  nindxp, lbin,   nrcpb,  thresh,
-     $                      iscs)
-
-      use memory
-
-      implicit real*8(a-h,o-z)
-C
-C   Calculation of the matrix A.
-C   A is now calculated by first sorting Tij(ab) to Tab(ij).  This
-C   allows calculating A using matrix multiplication. Since DGEMM is
-C   significantly more efficient that DDOT for large systems this is
-C   worth the extra effort.
-C
-C   Called from mp2_grad
-C
-C   Svein Saebo, Starkville, MS September 2003
-C
-C   Modify the subroutine Aterms and transform one occupied index of T
-C   matrix from QCMO to central LMO.
-C   NZG_6/4/2017 @UARK
-
-c     common /big/bl(30000)
-      parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
-C
-      call secund(taso1)
-      call elapsec(easo1)
-C
-C  reserve memory for one Tij
-c     call getmem(nvrsq/2+1,ibuf)
-      call getint_4(nvrsq,ibuf)
-c     call getmem(nvrsq/8+1,i1)
-      call getint_1(nvrsq,i1)
-C  reserve memory for bins
-c     call getmem(nindxp*lbin,ibins)
-      call getint_4(nindxp*lbin*2,ibins)
-c     call getmem(nindxp*lbin/4+1,i1bin)
-      call getint_1(nindxp*lbin*2,i1bin)
-C
-      call Aphas1(nval,   nvir,   ndisk1, ndisk3, lbin,
-     1            nrcpb,  iprint,bl(ibins),bl(i1bin),bl(ibuf),
-     2            bl(i1))
-      call retmem(4)
-cc
-      if(iprint.ge.2) then
-        call secund(taso2)
-        call elapsec(easo2)
-        write(6,*)' CPU and elapsed time for sort for A-terms:'
-        write(6,100) (taso2-taso1)/60.0d0,(easo2-easo1)/60.0d0
-  100 format(1x,f8.2,' minutes ',f8.2,' minutes ')
-      endif
-C
-C  sort finished - integrals now on <bins> file
-C
-      call matdef('Tab','q',nval,nval)
-      call matdef('Tbar','q',nval,nval)
-      itab=mataddr('Tab')
-      itbar=mataddr('Tbar')
-c     call getmem(lbin,ibin)
-      call getint_4(lbin*2,ibin)
-c     call getmem(lbin/4+1,i1)
-      call getint_1(lbin*2,i1)
-      call CalcA(nval,   nvir,   nrcpb,  ndisk3, lbin,
-     2           thresh, iprint,bl(ibin),bl(i1), bl(itab),
-     1           bl(itbar),iscs)
-      call retmem(2)
-      call matrem('Tbar')
-      call matrem('Tab')
-C
-      return
-      end
-
-
 C======XWYterms_CIM=====================================================
       subroutine XWYterms_CIM(ncf,    nval,   nvir,   ndisk1, ndisk2,
      1                        iprint, thresh, tij,    ttilda, ibuf,
      2                        i1,     gradv,  natoms, lbuf,   i1bin,
      3                        Kvo,    ncore,  nmo,    iscs,   ncen,
-     4                        trans,  Ccen)
+     4                        trans,  Ccen,   Sab)
 C
 C    calculates the A1 and A3 contributions to the MP2 gradients
 C    as well as several contributions to Y
@@ -1909,6 +1869,7 @@ C
 c     common /big/bl(30000)
       real*8 Kvo(*),trans(nval,nval)
       dimension tij(*),ttilda(*),gradv(3,natoms),Ccen(ncf,ncen)
+      dimension Sab(nvir,nvir)
       integer*4 ibuf(nvir**2),lbuf(nmo*nvir,2)
       integer*1 i1(nvir**2),i1bin(nmo*nvir,2)
       parameter (zero=0.0d0,half=0.5d0,one=1.0d0,two=2.0d0,four=4.0d0)
@@ -1920,6 +1881,7 @@ C
       real*8,allocatable::Ttil_LMO(:,:,:,:),Tji_LMO(:,:,:,:)
       real*8,allocatable::Tab_LMO(:,:,:,:),Tba_LMO(:,:,:,:)
       real*8,allocatable::Kqcmo(:,:,:,:),K_LMO(:,:,:,:)
+      real*8,allocatable::TLQ(:,:,:,:),TQL(:,:,:,:)
 C   Here some of the names contain '4'. Actually it is from the name
 C   Tsum4. So I also use '4' in the names. -NZG_6/9/2017
 
@@ -1953,7 +1915,7 @@ C    loop over pairs of occupied orbitals: ij
       NKij=0
 c
       allocate(Tqcmo(nval*(nval+1)/2,nvir,nvir))
-      allocate(Ttilqcmo(nval*(nval+1)/2,nvir,nvir))
+C      allocate(Ttilqcmo(nval*(nval+1)/2,nvir,nvir))
       allocate(Kqcmo(nval,nval,nvir,nmo))
       do ii=1,nval
          oei=bl(iocca+ii)
@@ -2011,7 +1973,6 @@ c -- decompress the integral ------------------------
                      xx = xx + SIGN(i1bin(imov,2)*dblcmp,xx)
                   Else
                      xx = lbuf(imov,2)*thresh*10.0d0**(-i1bin(imov,2))
-cc        write(6,*) ' Threshold Kij - imov:',imov,' i1:',i1bin(imov,2)
                   EndIf
 c ---------------------------------------------------
                   Kvo(imov)=xx
@@ -2035,7 +1996,7 @@ C Collect all the TT matrices into a three-dimensional matrix to do
 C transformation from QCMO to LMO.
 C NZG_6/5/2017 @UARK
             call matcollect(nvir,nvir,bl(itij),Tqcmo(ij,:,:))
-            call matcollect(nvir,nvir,bl(ittilda),Ttilqcmo(ij,:,:))
+C            call matcollect(nvir,nvir,bl(ittilda),Ttilqcmo(ij,:,:))
 C
             call matdef('txx','q',nvir,nvir)
             call matmmult('Tij','evir','txx')
@@ -2077,11 +2038,12 @@ cc
 
       allocate(Tij_LMO(ncen,nval,nvir,nvir),T4_LMO(ncen,nval,nvir,nvir))
       allocate(Ttil_LMO(nval,ncen,nvir,nvir))
+      allocate(TLQ(ncen,nval,nvir,nvir),TQL(nval,ncen,nvir,nvir))
       allocate(K_LMO(ncen,nval,nvir,nmo))
       do k=1,nvir
          do l=1,nvir
             ij=0
-            allocate(Tqcmo2(nval,nval),Ttilqcmo2(nval,nval))
+            allocate(Tqcmo2(nval,nval))
             allocate(T4qcmo2(nval,nval))
             do ii=1,nval
                oei=bl(iocca+ii)
@@ -2089,33 +2051,53 @@ cc
                   oej=bl(iocca+jj)
                   ij=ij+1
                   Tqcmo2(ii,jj)=Tqcmo(ij,l,k)
-                  Ttilqcmo2(jj,ii)=Ttilqcmo(ij,l,k)
+C                  Ttilqcmo2(jj,ii)=Ttilqcmo(ij,l,k)
                   T4qcmo2(ii,jj)=(oei+oej)*Tqcmo2(ii,jj)
                   if (ii/=jj) then
                      Tqcmo2(jj,ii)=Tqcmo(ij,k,l)
-                     Ttilqcmo2(ii,jj)=Ttilqcmo(ij,k,l)
+C                     Ttilqcmo2(ii,jj)=Ttilqcmo(ij,k,l)
                      T4qcmo2(jj,ii)=(oei+oej)*Tqcmo2(jj,ii)
                   endif
                enddo
             enddo
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,Tqcmo2,nval,0.0D0,Tij_LMO(:,:,l,k),ncen)
+
+C Test transform both indices from QCMO to LMO
+C NZG_8/23/2017 @UARK
 C            Tij_LMO(:,:,l,k)=matmul(Tij_LMO(:,:,l,k),trans)
-            call matmul_mkl(Ttilqcmo2,trans(:,1:ncen),Ttil_LMO(:,:,l,k),
-     &                      nval,nval,ncen)
+
+C            call matmul_mkl(Ttilqcmo2,trans(:,1:ncen),Ttil_LMO(:,:,l,k),
+C     &                      nval,nval,ncen)
 C            Ttil_LMO(:,:,l,k)=matmul(transpose(trans),Ttil_LMO(:,:,l,k))
+
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &                 nval,T4qcmo2,nval,0.0D0,T4_LMO(:,:,l,k),ncen)
 C            T4_LMO(:,:,l,k)=matmul(T4_LMO(:,:,l,k),trans)
-            deallocate(Tqcmo2,Ttilqcmo2,T4qcmo2)
+            deallocate(Tqcmo2,T4qcmo2)
          enddo
       enddo
-      deallocate(Tqcmo,Ttilqcmo)
+      deallocate(Tqcmo)
+
+C Use another way to construct Ttil_LMO matrix
+      do k=1,nvir
+         do l=1,nvir
+            do i=1,ncen
+               do j=1,nval
+                  Ttil_LMO(j,i,l,k)=2.0D0*Tij_LMO(i,j,k,l)
+     &                              -Tij_LMO(i,j,l,k)
+               enddo
+            enddo
+         enddo
+      enddo
 
       do k=1,nmo
          do l=1,nvir
             call dgemm('T','N',ncen,nval,nval,1.0D0,trans(:,1:ncen),
      &           nval,Kqcmo(:,:,l,k),nval,0.0D0,K_LMO(:,:,l,k),ncen)
+
+C Transform both indices of K from QCMO to LMO
+C NZG_8/23/2017 @UARK
 C            K_LMO(:,:,l,k)=matmul(K_LMO(:,:,l,k),trans)
          enddo
       enddo
@@ -2126,8 +2108,8 @@ C            K_LMO(:,:,l,k)=matmul(K_LMO(:,:,l,k),trans)
       call matdef('EW2vv','q',nvir,nvir)
       iEW2vv=mataddr('EW2vv')
       iTK=mataddr('TK')
-C      call X1term_CIM2(ncen,nval,nvir,bl(iXvv),T_LMO,Ttil_LMO,Sab)
-      call X1term_CIM(ncen,nval,nvir,bl(iXvv),Tij_LMO,Ttil_LMO)
+      call X1term_CIM2(ncen,nval,nvir,bl(iXvv),Tij_LMO,Ttil_LMO,Sab)
+C      call X1term_CIM(ncen,nval,nvir,bl(iXvv),Tij_LMO,Ttil_LMO)
       call X1term_CIM(ncen,nval,nvir,bl(iEW2vv),T4_LMO,Ttil_LMO)
       call TKterm_CIM(ncen,nval,nvir,nmo,bl(iTK),Ttil_LMO,K_LMO)
       call matdef('EW1vv','q',nvir,nvir)
@@ -2250,9 +2232,9 @@ C ======================================================================
       implicit none
 
       integer nvir,nmo
-      real*8 TT(nvir,nmo),xqcmo(nvir,nmo)
+      real*8 TT(nvir*nmo),xqcmo(nvir,nmo)
       
-      xqcmo=TT
+      xqcmo=reshape(TT,(/nvir,nmo/))
 
       end subroutine matcollect
 
@@ -2789,7 +2771,8 @@ C  transform Zai and Ztil matrices from QCMO to central MOs
       call matrem('zttemp')
 
       call matrem('MOcen')
-C      call matprint('DPCIM',6)
+C NZG
+      call matcopy('DPCIM','X3')
       call matadd('DPCIM','CIMX')
 C      call matprint('CIMX',6)
           
@@ -2860,3 +2843,206 @@ C NZG_5/16/2017 @UARK
       call matmul_mkl(Zai,trans(:,1:ncen),Zac,nvir,nmo,ncen)
 
       end subroutine ZQtoL     
+
+C ======================================================================
+      subroutine Aterms_CIM(nval,   nvir,   ndisk1, ndisk3, iprint,
+     $                      nvrsq,  nindxp, lbin,   nrcpb,  thresh,
+     $                      iscs,   Sab)
+
+      use memory
+
+      implicit real*8(a-h,o-z)
+C
+C   Calculation of the matrix A.
+C   A is now calculated by first sorting Tij(ab) to Tab(ij).  This
+C   allows calculating A using matrix multiplication. Since DGEMM is
+C   significantly more efficient that DDOT for large systems this is
+C   worth the extra effort.
+C
+C   Called from mp2_grad
+C
+C   Svein Saebo, Starkville, MS September 2003
+C
+c     common /big/bl(30000)
+      dimension Sab(nvir,nvir)
+      parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
+C
+      call secund(taso1)
+      call elapsec(easo1)
+C
+C  reserve memory for one Tij
+c     call getmem(nvrsq/2+1,ibuf)
+      call getint_4(nvrsq,ibuf)
+c     call getmem(nvrsq/8+1,i1)
+      call getint_1(nvrsq,i1)
+C  reserve memory for bins
+c     call getmem(nindxp*lbin,ibins)
+      call getint_4(nindxp*lbin*2,ibins)
+c     call getmem(nindxp*lbin/4+1,i1bin)
+      call getint_1(nindxp*lbin*2,i1bin)
+C
+      call Aphas1(nval,   nvir,   ndisk1, ndisk3, lbin,
+     1            nrcpb,  iprint,bl(ibins),bl(i1bin),bl(ibuf),
+     2            bl(i1))
+      call retmem(4)
+cc
+      if(iprint.ge.2) then
+        call secund(taso2)
+        call elapsec(easo2)
+        write(6,*)' CPU and elapsed time for sort for A-terms:'
+        write(6,100) (taso2-taso1)/60.0d0,(easo2-easo1)/60.0d0
+  100 format(1x,f8.2,' minutes ',f8.2,' minutes ')
+      endif
+C
+C  sort finished - integrals now on <bins> file
+C
+      call matdef('Tab','q',nval,nval)
+      call matdef('Tbar','q',nval,nval)
+      itab=mataddr('Tab')
+      itbar=mataddr('Tbar')
+c     call getmem(lbin,ibin)
+      call getint_4(lbin*2,ibin)
+c     call getmem(lbin/4+1,i1)
+      call getint_1(lbin*2,i1)
+      call CalcA_CIM(nval,   nvir,   nrcpb,  ndisk3, lbin,
+     2               thresh, iprint,bl(ibin),bl(i1), bl(itab),
+     1               bl(itbar),iscs, Sab)
+      call retmem(2)
+      call matrem('Tbar')
+      call matrem('Tab')
+C
+      return
+      end
+C================calca==========================================
+      subroutine CalcA_CIM(nval,   nvir,   nrcpb,  ndisk3, lbin,
+     2                     thresh, iprint, ibins,  i1bin,  Tab,
+     2                     Tbar,   iscs,   Sab)
+      implicit real*8(a-h,o-z)
+      integer*1 i1bin(2,lbin)
+      integer*4 ibins(2,lbin)
+      dimension Tab(nval,*),Tbar(nval,*),Sab(nvir,nvir)
+      parameter (half=0.5d0,dblmax=2147483648.0d0)
+c
+      dblcmp = dblmax*thresh
+c
+      iab=0      ! bin record counter
+      nbin=0
+c
+      do ia=1,nvir
+         do ib=1,ia
+            iab=iab+1
+C  read back matrix Tab from bins
+            istar=(iab-1)*nrcpb
+            iwrd=1
+            mrec=istar+1
+            read(ndisk3,rec=mrec) i1bin,ibins
+            nbin=nbin+1
+            ij=0
+            do ii=1,nval
+               do jj=1,ii
+                  ij=ij+1
+                  if (ij.gt.lbin) then
+                     iwrd=iwrd+1
+                     mrec=istar+iwrd
+                     nbin=nbin+1
+                     read(ndisk3,rec=mrec) i1bin,ibins
+                     ij=1
+                  endif
+c -- decompress the integral ------------------------
+                  If (i1bin(1,ij).eq.0) Then
+                     xx = ibins(1,ij)*thresh
+                  Else If(i1bin(1,ij).gt.0) Then
+                     xx = ibins(1,ij)*thresh
+                     xx = xx + SIGN(i1bin(1,ij)*dblcmp,xx)
+                  Else
+                     xx = ibins(1,ij)*thresh*10.0d0**(-i1bin(1,ij))
+                  EndIf
+                  Tab(ii,jj)=xx
+                  If (i1bin(2,ij).eq.0) Then
+                     xx = ibins(2,ij)*thresh
+                  Else If(i1bin(2,ij).gt.0) Then
+                     xx = ibins(2,ij)*thresh
+                     xx = xx + SIGN(i1bin(2,ij)*dblcmp,xx)
+                  Else
+                     xx = ibins(2,ij)*thresh*10.0d0**(-i1bin(2,ij))
+                  EndIf
+                  Tab(jj,ii)=xx
+c ---------------------------------------------------
+               enddo  ! over jj
+            enddo  ! over ii
+            call matcopy('Tab','Tbar')
+            call atoat2(Tbar,nval,'n',iscs)
+            call matmmul2('Tbar','Tab','Aik','t','n','a')
+            if (ia.gt.ib) then
+               call matmmul2('Tbar','Tab','Aik','n','t','a')
+            endif
+         enddo
+      enddo
+      if(iprint.ge.6) call matprint('Aik',6)
+      end subroutine CalcA_CIM
+     
+
+C ======================================================================
+      subroutine MakeGrad_CIM(na,gradv,FxSx,iunfs,ntri,WX,ncf,KW2atom)
+C
+C  contructs gradient contribution trace(FxSx * WX)
+C  the contribution is added to gradv
+C  Svein Sabeo, Fayetteville, AR Summer 2002
+C  Called from Mp2_grad (twice) once for X- once for W-terms
+C  na         number of atoms
+C  gradv      gradient vector (3,na)
+C  FxSx       contains either F(x) or S(x), dimension (ntri,3)
+C  iunfs      unit for F(x) or S(x)
+C  ntri       ncf*(ncf+1)/2
+C  WX         ncf*ncf matrix, contains either matrix W or X
+C             W is contracted with S(x) X is contracted with F(x)
+C  ncf        number of basis functions
+C
+C  Modify the original 
+      use memory
+
+      implicit real*8(a-h,o-z)
+c     common /big/bl(30000)
+      dimension gradv(3,na),FXSX(ntri,3),WX(*)
+      integer KW2atom(ncf)
+      real*8,allocatable::FXSX2(:,:)
+
+      call matdef('fxq','q',ncf,ncf)
+C fxq matrix for quadratic storage of one derivative matrix for correct
+C trace.
+      allocate(FXSX2(ntri,3))
+      ifxq=mataddr('fxq')
+      nqd=ncf*ncf
+      do iat=1,na
+C         write(6,*) 'Atom no : ',iat
+         read(unit=iunfs,rec=iat) FXSX
+         do miu=1,ncf
+            do niu=1,miu
+               itri=miu*(miu-1)/2+niu
+               miu2=KW2atom(miu)
+               niu2=KW2atom(niu)
+               if (miu2>=niu2) then
+                  itri2=miu2*(miu2-1)/2+niu2
+               else
+                  itri2=niu2*(niu2-1)/2+miu2
+               endif
+               FXSX2(itri,:)=FXSX(itri2,:)
+            enddo
+         enddo
+         FXSX=FXSX2
+C         do k=1,ntri
+C            write(6,111) k,FXSX(k,1),FXSX(k,2),FXSX(k,3)
+C         enddo
+         call matcopy('fxsx','fxq')
+         gradv(1,iat)=gradv(1,iat) -
+     1                ddot(nqd,bl(ifxq),1,WX,1)
+         call matcopy('fxsy','fxq')
+         gradv(2,iat)=gradv(2,iat) -
+     1                ddot(nqd,bl(ifxq),1,WX,1)
+         call matcopy('fxsz','fxq')
+         gradv(3,iat)=gradv(3,iat) -
+     1                ddot(nqd,bl(ifxq),1,WX,1)
+      enddo
+C 111  format('ij=',i6,2x,3(f12.6,1x))
+      call matrem('fxq')
+      end

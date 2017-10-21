@@ -1706,8 +1706,6 @@ c
          end2=end1-e(nmo+ib)
          do ia=1,nvir
             x(ia,ib)=x(ia,ib)/(end2-e(nmo+ia))
-C NZG
-C            write(6,"(4I5,F15.8)") i,j,ia,ib,x(ia,ib)
          end do
       end do
 C  check magnitude and convert to integers

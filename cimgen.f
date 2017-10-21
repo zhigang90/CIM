@@ -1,5 +1,5 @@
 C *****************************************************
-C *  generate Cluster-in-Molecule cluster input file  *
+C *  Generate Cluster-in-Molecule cluster input file  *
 C *  Modify the code from GAMESS                      *
 C *  NZG_4/16/2016 @@UARK                             *
 C *****************************************************
@@ -181,9 +181,15 @@ C NZG_11/29/2016 @@NJU --Combine active space to one cluster
 
 C Add force option for gradient calculation
       logical calforce,calforce2
+      integer,allocatable::KW2atom(:),atom2KW(:)
+      character scrfile*256
+      character filefockder*256
+      character fockname*256
+      real*8,allocatable::hx(:,:,:)
+      real*8,allocatable::temp(:,:)
 
 C Below are used for a new way of constructing virtual space: construct
-C PAOs with a cluster
+C PAOs within a cluster
 C NZG_4/7/2017 @@UARK
 C Failed finally.... Zhigang 4/19/2017 @@UARK
       logical fpao,cpao
@@ -474,6 +480,44 @@ C      write(6,*) density
       end do
       CALL ReorderFock(nbas,nbas,Z(i1),FKW,FK)
 
+      if (calforce2) then
+         allocate(KW2atom(nbas),atom2KW(nbas))
+         KW2atom(1:nbas)=Z(i1:i1+nbas-1)
+C         write(6,'(20I4)') KW2atom
+
+         do i=1,nbas
+            atom2KW(KW2atom(i))=i
+         enddo
+      endif
+
+      deallocate(FKW,Z)
+
+C open the file to read the derivatives of one-electron part of Fock
+C matrix.
+      if (calforce2) then
+         call getchval('scrf',scrfile)
+         call rmblan(scrfile,256,len)
+         filefockder=scrfile(1:len)//'.fock1'
+         ntri=nbas*(nbas+1)/2
+         lrec=3*ntri*8
+         nfockfile=723
+         open(unit=nfockfile,file=filefockder,form='unformatted',
+     &        access='direct',recl=lrec,status='old')
+         
+         allocate(hx(ntri,3,natom))
+         do i=1,natom
+            read(unit=nfockfile,rec=i) hx(:,:,i)
+         enddo
+
+C         do i=1,natom
+C            write(6,*) 'atom no:', i
+C            do ij=1,ntri
+C               write(6,345) ij,hx(ij,1,i),hx(ij,2,i),hx(ij,3,i)
+C            enddo
+C         enddo
+      endif
+C 345  format('ij=',i4,2x,3(f12.6,1x))
+
       if (nofrozen) then
          nfocc=0
       else
@@ -644,7 +688,6 @@ C 11/20/2016_NZG @@NJU
                   nclu_act=nclu_act+1
                   norb_clu_act(nclu_act)=norb_clu(i)
                   orb_clu_act(:,nclu_act)=orb_clu(:,i)
-                  ncenorb_act(nclu_act)=ncenorb(i)
                   ncenorb_act(nclu_act)=ncenorb(i)
                   ncenatom_act(nclu_act)=ncenatom(i)
                   cenatom_act(:,nclu_act)=cenatom(:,i)
@@ -951,7 +994,30 @@ C
          endif
          TRANS=transpose(VECT)
          deallocate(MAT,VECT,VALU,VC)
-C
+
+C Test if TRANS is a unitary matrix
+C         allocate(MAT(NVAL,NVAL))
+C         call matmul_mkl(TRANS,transpose(TRANS),MAT,nval,nval,nval)
+C         do k=1,nval
+C            write(6,*) MAT(:,k)
+C         enddo
+C         do k=1,nval
+C            do l=1,nval
+C               if (k==l) then
+C                  if (MAT(k,l)-1.0D0>1.0D-6) then
+C                     write(6,*) 'Not unitary'
+C                     stop
+C                  endif
+C               else
+C                  if (MAT(k,l)>1.0D-6) then
+C                     write(6,*) 'Not unitary'
+C                     stop
+C                  endif
+C               endif
+C            enddo
+C         enddo
+C         deallocate(MAT)
+C Conclusion: it is a unitary matirx!
 
 C Then virtual MOs
 
@@ -1008,7 +1074,7 @@ C
 C         KB=KK
 C --Normalize the QCMOs
 C --NZG_4/11/2017 @@UARK
-         call normorb(JF,NA,MOS2,S2(1:JF,1:JF))
+C         call normorb(JF,NA,MOS2,S2(1:JF,1:JF))
          deallocate(S2)
  
          if (nprint>0) write(nprint,"(1x,'Trace(Fock LMO)=',f20.10)")
@@ -1041,7 +1107,10 @@ C ===========================================
          inpname=trim(cluname)//'.inp'
          infname=trim(cluname)//'.cim'
          mosname=trim(cluname)//'.mos'
-         if (calforce2) cenname=trim(cluname)//'.cen'
+         if (calforce2) then
+            cenname=trim(cluname)//'.cen'
+            fockname=trim(cluname)//'.fock1'
+         endif
          lenM=k2-k1+5
          call NJ_trim(inpname,k1,k2)
          inpclu=123+i
@@ -1132,10 +1201,46 @@ C -- Write MO coefficients and orbital energies to XXX.mos file
          call WriteMOS(JF,NA,MOS2,FHH,.true.,lenM,mosname,itype)
 
 C If force is to be calculated, the coefficients of central orbitals are
-C needed. -NZG_5/22/2017 @@UARK
+C needed. -NZG_5/22/2017 @UARK
+         if (calforce2) then
+            call WriteMOS(JF,ncen,MO_clu(1:JF,1:ncen),FHH,
+     &                    .false.,lenM,cenname,itype)
+            
+C Write the hx matrix into disk. -NZG_10/12/2017 @UARK
+            lrec=3*LF2*8
+            open(unit=inpclu,file=fockname,form='unformatted',
+     &           access='direct',recl=lrec)
+
+            allocate(temp(LF2,3))
+
+            do j=1,natm_clu(i)
+               do miu=1,JF
+                  do niu=1,miu
+                     itri=miu*(miu-1)/2+niu
+                     miu_whole=ZA(miu,i)
+                     niu_whole=ZA(niu,i)
+C                     write(6,*) 'debug'
+C                     write(6,*) miu,niu,miu_whole,niu_whole
+                     miu_kw=atom2KW(miu_whole)
+                     niu_kw=atom2KW(niu_whole)
+C                     write(6,*) miu_kw,niu_kw
+                     if (miu_kw>=niu_kw) then
+                        itri_whole=miu_kw*(miu_kw-1)/2+niu_kw
+                     else
+                        itri_whole=niu_kw*(niu_kw-1)/2+miu_kw
+                     endif
+C                     write(6,*) itri_whole
+                     temp(itri,1)=hx(itri_whole,1,BA(j,i))
+                     temp(itri,2)=hx(itri_whole,2,BA(j,i))
+                     temp(itri,3)=hx(itri_whole,3,BA(j,i))
+                  enddo
+               enddo
+               write(inpclu,rec=j) temp
+            enddo
+            deallocate(temp)
+         endif
+
 C for debug
-         if (calforce2) call WriteMOS(JF,ncen,MO_clu(1:JF,1:ncen),FHH,
-     &                                .false.,lenM,cenname,itype)
 C         if (calforce2) call WriteMOS(JF,KB,MO_clu(1:JF,1:KB),FHH,
 C     &                                .false.,lenM,cenname,itype)
 

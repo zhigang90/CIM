@@ -922,7 +922,6 @@ C NZG_5/8/2017 @UARK
       do k=1,nvirt
          do l=1,nvirt
             allocate(xqcmo2(nval,nval),tqcmo2(nval,nval))
-            xqcmo2=0.0D0; tqcmo2=0.0D0
             do j=nfirst,nlast
                do ii=nfirst,nlast
                   if (ii>=j) then
