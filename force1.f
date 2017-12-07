@@ -118,6 +118,7 @@ C         call fder_print(bl(lfock1),na,ntri,1.d0)
          allocate(temp(ntri,3))
          call trsp_disk(nfockfile,na,ntri,temp,bl(lfock1))
          close(unit=nfockfile,status='keep')
+         deallocate(temp)
       endif
 
 c Calculate S1 & T1 (overlap & kinetic) derivative integrals

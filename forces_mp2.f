@@ -289,6 +289,9 @@ C     call memory_status('Yp')
 C  NZG test CAC term
       call matdef('CAC','s',ncf,ncf)
       call matdef('CZC','q',ncf,ncf)
+      call matdef('X12','q',ncf,ncf)
+
+
       call matdef('DDT','s',ncf,ncf)
       call matdef('W','q',ncf,ncf)
       call matdef('X','s',ncf,ncf)
@@ -595,6 +598,10 @@ c     call getmem(lbin/4+1,i1)
 C
       call symmoff
       call getival('SymFunPr',ifp)
+
+C NZG
+      gradv=0.0D0
+
       call Rphas2(ncf,    nval,   ndisk3, nbins,  lbin,
      1            thresh,bl(ibin),bl(i1),bl(itmo),bl(itao),
      2            nsym,  iprint, bl(ictr),nrcpb,bl(ifp),
@@ -622,10 +629,10 @@ cc
          write(iout,100) t21,e21
       endif
 cc
-C NZG
+c NZG
 C      if(iprint.ge.2) then
-        Write(iout,*) ' MP2 gradients after A2-terms'
-        call torque(NAtoms,0,bl(inuc),gradv )
+         Write(iout,*) ' MP2 gradients after A2-terms'
+         call torque(NAtoms,0,bl(inuc),gradv )
 C      endif
       stop
 C
@@ -641,25 +648,32 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('DDT','XF')
-      ixadr=mataddr('XF')
+
+C NZG
+C      ixadr=mataddr('XF')
 
 C NZG test X2 term
 C      call matdef('XF','q',ncf,ncf)
 C      call matcopy('CAC','XF')
 C      call matscal('XF',-two)
-C      ixadr=mataddr('CZC')
+      ixadr=mataddr('X12')
 
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
+
+C NZG
+      gradv=0.0D0
       call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
      1             bl(ixadr),ncf)
       call matrem('XF')
 cc
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-      endif
+C      endif
+      stop
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -676,8 +690,6 @@ cc
       call matrem('DY')
       iwad=mataddr('W')
 
-C NZG
-      gradv=0.0D0
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
@@ -693,12 +705,10 @@ cc
          call matprint('W',6)
       endif
 cc
-C NZG
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after W-terms:'
          call torque(NAtoms,0,bl(inuc),gradv )
-C      endif
-      stop
+      endif
 C
 C   before returning calculate the MP2 dipole moments
       call matdef('dip','v',3,3)
@@ -1007,7 +1017,9 @@ C NZG
       call matscal('DDT',-two)
       call matrem('CA')
 C     call matprint('Y',6)
-c
+c NZG
+      call matcopy('CAC','X12')
+      call matscal('X12',-two)
       return
       end
 C==============BinSoRev=============================================
@@ -1373,6 +1385,7 @@ C
       call matdef('denf','q',ncf,ncf)
       call matdef('ddtf','q',ncf,ncf)
       call matcopy('den0','denf')
+
       call matcopy('DDT','ddtf')
       idena=mataddr('denf')
       iddt=mataddr('ddtf')
@@ -1469,17 +1482,20 @@ c ---------------------------------------------------
                   call atoat2(Tmnmo,nval,'y',iscs)
 C  backtransform this matrix to AO basis
                   call secund(ttbt1)
-                  call BackTrans(Tmnao,ncf,nval,ipr,jpr,
-     2                           bl(ipoint),bl(jpoint),bl(iocca))
+
+C NZG -For test, use full transformation to compare the results.
+C                  call BackTrans(Tmnao,ncf,nval,ipr,jpr,
+C     2                           bl(ipoint),bl(jpoint),bl(iocca))
+                  call BackTrans_CIM(Tmnmo,Tmnao,ncf,nval,nval,
+     &                               bl(iocca),bl(iocca))
+
                   call secund(ttbt2)
                   ttbt=ttbt+ttbt2-ttbt1
 CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
-C NZG
-
-C                  call addtoT1(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+                  call addtoT_orig(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
                   call secund(ttbt3)
@@ -2864,30 +2880,30 @@ c
       densmax=zero
       ipoint=0
       do ics=1,ncs
-        call get_shell_size(inx,ics,isize)
-        kpoint=0
-        do kcs=1,ncs
-          call get_shell_size(inx,kcs,ksize)
-          dmxs=zero
-          do my=1,isize
-          do lam=1,ksize
-            dmx=DSX(ipoint+my,kpoint+lam)
-            dmxs=max(dmxs,dmx)
-          end do     !lam in kcs
-          end do     ! my in ics
-          kpoint=kpoint+ksize
+         call get_shell_size(inx,ics,isize)
+         kpoint=0
+         do kcs=1,ncs
+            call get_shell_size(inx,kcs,ksize)
+            dmxs=zero
+            do my=1,isize
+               do lam=1,ksize
+                  dmx=DSX(ipoint+my,kpoint+lam)
+                  dmxs=max(dmxs,dmx)
+               end do     !lam in kcs
+            end do     ! my in ics
+            kpoint=kpoint+ksize
 ckw
-          dmxs=min(dmxs,one)
-          densmax=max(densmax,dmxs)
-          DS(ics,kcs)=dmxs*dmxs
+            dmxs=min(dmxs,one)
+            densmax=max(densmax,dmxs)
+            DS(ics,kcs)=dmxs*dmxs
 cc          DS(kcs,ics)=DS(ics,kcs)
-        end do     ! kcs
-        ipoint=ipoint+isize
+         end do     ! kcs
+         ipoint=ipoint+isize
       end do     !ics
       densmax=densmax*densmax
-cccccc
-cc      write(6,*) 'In <mkdscl>  DS array is:'
-cc      call prntmat(ncs,ncs,ncs,DS)
+cccccc 
+C      write(6,*) 'In <mkdscl>  DS array is:'
+C      call prntmat(ncs,ncs,ncs,DS)
 cccccc
       end
 C=======mkdsqt=================================================
@@ -3222,19 +3238,22 @@ C==========addtot_orig===================================
       dimension T(ncf,*),D(ncf,*),DDT(ncf,*)
       parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
       do ny=1,ncf
-      do isi=1,ncf
-      if(my.gt.lam) then
-      T(isi,ny)=T(isi,ny)
-     1 +one4*D(my,ny)*D(lam,isi)-one8*D(my,lam)*D(ny,isi)  !  SCF
-     2 +one4*DDT(my,ny)*D(lam,isi)-one8*DDT(my,lam)*D(ny,isi)! Fx
-      T(ny,isi)=T(ny,isi)
-     2 +one4*DDT(lam,ny)*D(my,isi)-one8*DDT(my,lam)*D(ny,isi)! Fx
-      else
-       T(isi,ny)=T(isi,ny)
-     1 +one8*D(my,ny)*D(lam,isi)-on16*D(my,lam)*D(ny,isi)
-     2 +one4*DDT(my,ny)*D(lam,isi)-one8*DDT(my,lam)*D(ny,isi)
-      endif
-      enddo
+         do isi=1,ncf
+            if (my.gt.lam) then
+               T(isi,ny)=T(isi,ny)
+C     1         +one4*D(my,ny)*D(lam,isi)-one8*D(my,lam)*D(ny,isi)  !  SCF
+     2         +one4*DDT(my,ny)*D(lam,isi)
+     3         -one8*DDT(my,lam)*D(ny,isi)! Fx
+               T(ny,isi)=T(ny,isi)
+     2         +one4*DDT(lam,ny)*D(my,isi)
+     3         -one8*DDT(my,lam)*D(ny,isi)! Fx
+            else
+               T(isi,ny)=T(isi,ny)
+C     1         +one8*D(my,ny)*D(lam,isi)-on16*D(my,lam)*D(ny,isi)
+     2         +one4*DDT(my,ny)*D(lam,isi)
+     3         -one8*DDT(my,lam)*D(ny,isi)
+            endif
+         enddo
       enddo
       end
 C================BackTrans============================================
@@ -3863,7 +3882,7 @@ C     INPUT    gz   1/4 G(DP)  where DP =(Co+)z(Cv)+(Cv+)z+(Co)
 C     INPUT    ea,ei  vectors with orbital energies
 C     nvir     number of virtual orbitals
 C     nval     number of occupied orbitals
-C     zold     used for temporary storag eof old z-matrix
+C     zold     used for temporary storage of old z-matrix
 C     diffm    large absolute difference between old and new z-mat
 C
       implicit real*8(a-h,o-z)
@@ -4387,24 +4406,24 @@ C==============FixH===========================================
       implicit real*8(a-h,o-z)
       dimension alfa(*), H(idim,*),Hny(idim,*)
       if(idim.gt.1)then
-      do i=1,idim
-      hik=alfa(idim)*H(i,idim)
-      do j=1,idim-1
-      hik=hik+alfa(j)*H(i,j)
-      enddo
-      Hny(i,idim)=hik
-      Hny(idim,i)=hik
-      enddo
+         do i=1,idim
+            hik=alfa(idim)*H(i,idim)
+            do j=1,idim-1
+               hik=hik+alfa(j)*H(i,j)
+            enddo
+            Hny(i,idim)=hik
+            Hny(idim,i)=hik
+         enddo
       endif
 C  do Hkk
       hkk=alfa(idim)*alfa(idim)*H(idim,idim)
       if(idim.gt.1) then
-      do i=1,idim-1
-      do j=1,idim-1
-      hkk=hkk+alfa(i)*alfa(j)*H(i,j)
-      enddo
-      hkk=hkk+2.0d0*alfa(i)*alfa(idim)*H(i,idim)
-      enddo
+         do i=1,idim-1
+            do j=1,idim-1
+               hkk=hkk+alfa(i)*alfa(j)*H(i,j)
+            enddo
+            hkk=hkk+2.0d0*alfa(i)*alfa(idim)*H(i,idim)
+         enddo
       endif
       Hny(idim,idim)=hkk
       end
@@ -4421,10 +4440,10 @@ C==============FixGZ==========================================
       call readz(ndisk,idim,bl(igza),nstrip)
       call matscal('Gzk',alfa(idim))
       if(idim.gt.1) then
-      do i=1,idim-1
-      call readz(ndisk,i,bl(igzap),nstrip)
-      call matadd1('Gzkp',alfa(i),'Gzk')
-      enddo
+         do i=1,idim-1
+            call readz(ndisk,i,bl(igzap),nstrip)
+            call matadd1('Gzkp',alfa(i),'Gzk')
+         enddo
       endif
       call writez(ndisk,idim,bl(igza),nstrip)
       call matrem('Gzkp')

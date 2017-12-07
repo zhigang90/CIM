@@ -81,9 +81,9 @@ C *************************************************
       real*8,allocatable::energypair_CIM(:,:),energyorb(:)
       real*8,allocatable::TR1(:),TR2(:,:),TC1(:),TC2(:,:)
       real*8,allocatable::PCIMA(:,:),PCIMB(:,:),ECIMA(:,:),ECIMB(:,:)
-
+C
 C For test
-C      real*8,allocatable::Sij(:,:),SOVER(:,:),tmp(:)
+      real*8,allocatable::Sij(:,:),SOVER(:,:),tmp(:),tmp2(:,:)
 
       parameter (zero=0.0D0,one=1.0d0,two=2.0d0,sixty=60.0d0)
       integer,parameter::maxgran=300*301/2

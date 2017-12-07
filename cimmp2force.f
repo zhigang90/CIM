@@ -36,6 +36,7 @@ c
       integer,allocatable::KW2atom(:)
       real*8,allocatable::dtmp(:),Fock1(:,:),XC(:,:),QA(:),BASDAT(:,:)
       real*8,allocatable::tmp(:),SOVER(:,:),Ccen(:,:),Ccen1(:,:)
+      real*8,allocatable::SklA(:,:,:),SiaA(:,:,:),den1(:,:)
       character*8,allocatable::AtSymb(:)
 
 C For test
@@ -87,9 +88,18 @@ C  Fock matrix should be read from the XXX.cim file
      &     status='old')
       LF2=ncf*(ncf+1)/2
       allocate(dtmp(LF2),Fock1(ncf,ncf),iatom(natom))
-      call rread8(iunit,'$AO-FOCK-A',LF2,dtmp(1))
       call iread8(iunit,'$ATOMS',natom,iatom(1))
+      allocate(SklA(nmo,nmo,natom),SiaA(nmo,nvirt,natom))
+      call rread8(iunit,'$SklA',nmo*nmo*natom,SklA(1,1,1))
+      call rread8(iunit,'$SiaA',nmo*nvirt*natom,SiaA(1,1,1))
+
+      call rread8(iunit,'$AO-FOCK-A',LF2,dtmp(1))
       call FockFull(ncf,LF2,dtmp,Fock1)
+
+      allocate(den1(ncf,ncf))
+      call rread8(iunit,'$DENSITY',LF2,dtmp(1))
+      call FockFull(ncf,LF2,dtmp,den1)
+      
       close(unit=iunit,status='keep')
 
       allocate(XC(3,NAtom),AtSymb(NAtom),IAN(NAtom),QA(NAtom))
@@ -129,6 +139,13 @@ C      allocate(SOVER2(ncf,ncf))
 C      call ReorderFock2(ncf,ncf,Z(1),Fock1,SOVER2)
 
       call ReorderFock3(ncf,Z(1),Fock1,bl(lfock0))
+
+C Rearrange the density matrix from the whole system.
+C NZG_11/16/2017 @UARK
+      call matdef('denful','s',ncf,ncf)
+      ldenful=mataddr('denful')
+      call ReorderFock3(ncf,Z(1),den1,bl(ldenful))
+      deallocate(den1)
 
 C Read the coefficients of central orbitals (LMO) and reorder to KW
 C order. -NZG_5/22/2017 @UARK
@@ -221,8 +238,8 @@ C NZG_5/4/2017 @UARK
       call matdef('den0','s',ncf,ncf)
       lden = mataddr('den0')
       call setival('ldensi',lden)
-      
       call NJ_denmat_sym(ncf,ncf,nocc,bl(lvec),bl(lden))
+
 C      call matprint('den0',6)
 
 c  check if the basis set contains L-shells
@@ -258,7 +275,7 @@ C zero-out the two-electron contributions to the force
 
       call mp2_grad_cim(ncf,nval,nvirt,IPRNT,thresh,nmo,natom,
      &                  bl(lforc2),ncore,trans,bl(iccen),ncen,iatom,Sab,
-     &                  KW2atom)
+     &                  KW2atom,SklA,SiaA)
 c-----------------------------------------------------------------
 c
 c  At this point two-electron contributions to the gradient are known.
@@ -292,7 +309,8 @@ c ...........................................................
 C ====================================================================== 
       subroutine mp2_grad_cim(ncf,    nval,   nvir,   iprint, thresh,
      1                        nmo,    natoms, gradv,  ncore,  trans,
-     2                        Ccen,   ncen,   iatom,  Sab,    KW2atom)
+     2                        Ccen,   ncen,   iatom,  Sab,    KW2atom,
+     3                        SklA,   SiaA)
 C
 C  Main routine for CIM-MP2-gradients. 
 C  In CIM we don't release memory after energy calculation. Some of the
@@ -339,11 +357,12 @@ c     common /intbl/maxsh,inx(100)
       dimension gradv(3,natoms)
       dimension trans(nmo,nmo),Ccen(ncf,ncen),iatom(natoms)
       dimension Sab(nvir,nvir),KW2atom(ncf)
+      dimension SiaA(nmo,nvir,natoms),SklA(nmo,nmo,natoms)
       character*256 scrfile,filname1,filname2,filname3,filname4,filname5
       parameter(sixty=60.0d0,two=2.0d0,onef=0.25d0)
       parameter(zero=0.0d0,half=0.5d0,one=1.0d0,four=4.0d0)
 c
-      real*8,allocatable::Alq(:,:),gradv2(:,:)
+      real*8,allocatable::Alq(:,:),gradv2(:,:),transt(:,:)
 
       call secund(tgr0)
       call elapsec(egr0)
@@ -461,6 +480,9 @@ C  X2=Ccen Alq CoT !CoT is transpose of Co || This is the second term of
 C  Eq(19)
       call matdef('X2','q',ncf,ncf)
       call matdef('X3','q',ncf,ncf)
+
+C NZG for test
+      call matdef('X12','q',ncf,ncf)
       ix2=mataddr('X2')
       ioccu=mataddr('occu')
       call BackTrans_CIM(Alq,bl(ix2),ncf,nval,ncen,Ccen,bl(ioccu))
@@ -498,6 +520,9 @@ C      call matsub('evir','epsi',nmo+1,ncf)
       call matsub('evir','epsi',nmo+1,nvir+nmo) !NZG_3/31/2017
       call matsub('eocc','epsi',ncore+1,nmo)
       call matdef('Y','r',ncf,nmo)
+
+C For CIM calculation. NZG_11/25/2017 @UARK
+      call matdef('YM','r',ncf,nmo)
       call matsub('Yp','Y',ncore+1,nmo)
       iypadr=mataddr('Yp')
 C     call memory_status('Yp')
@@ -769,7 +794,16 @@ C
       iyaia=mataddr('Yai')
       iocca=mataddr('epsi')
       ivira=mataddr('evir')
-      call matmmul2('virt','Y','Yai','t','n','n')
+
+C  calculate YM matrix
+      call matdef('WWT','q',nmo,nmo)
+      iwwt=mataddr('WWT')
+      allocate(transt(ncen,nmo))
+      transt=transpose(trans(:,1:ncen))
+      call matmul_mkl(trans(:,1:ncen),transt,bl(iwwt),nmo,ncen,nmo)
+      call matmmult('Y','WWT','YM')
+C      call matmmul2('virt','Y','Yai','t','n','n')
+      call matmmul2('virt','YM','Yai','t','n','n')
 C
 C  reuse ndisk1 and ndisk2 for Zai and Gz's
 C
@@ -777,9 +811,9 @@ C
      1     access='direct',recl=8*nvir*nmo)
       open(unit=ndisk2,file=filname5(1:len+4),form='unformatted',
      1     access='direct',recl=8*nvir*nmo)
-      call cphfz_CIM(ncf,nval,nvir,bl(iocca),bl(ivira),
-     1               bl(iyaia),bl(izaia),nmo,thresh,inx,
-     2               iprint,ncore,ndisk1,ndisk2,ncen,Ccen,trans)
+      call cphfz_CIM(ncf,nval,nvir,bl(iocca),bl(ivira),bl(iyaia),
+     &               bl(izaia),nmo,thresh,inx,iprint,ncore,ndisk1,
+     &               ndisk2,ncen,Ccen,trans,SklA,SiaA,natoms)
       close(unit=ndisk1,status='delete')
       close(unit=ndisk2,status='delete')
 cc
@@ -790,6 +824,8 @@ cc
   430 format(/'Master CPU time for   CPHF  solver    = '
      *,f8.2,'  Elapsed = ',f8.2,' min' )
 cc
+C      call matrem('YM')
+      call matrem('WWT')
       call matrem('Yai')
       call matrem('Zai')
       if(ncore.gt.0) call matrem('Zic')
@@ -840,12 +876,13 @@ cc
          write(iout,100) t21,e21
       endif
 cc
+
 C NZG
 C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after A2-terms'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
 C      endif
-      stop
+         stop
 C
 C  build gradient vector
 C
@@ -859,11 +896,12 @@ C  do F(x) terms:
 C  make it quadratic to simplify trace
       call matdef('XF','q',ncf,ncf)
       call matcopy('CIMX','XF')
-      ixadr=mataddr('XF')
-
+C NZG
+C      ixadr=mataddr('XF')
 C NZG_Test X1 contribution to the force
 C      call matscal('X2',-two)
-C      ixadr=mataddr('X3')
+      ixadr=mataddr('X12')
+      gradv=0.0D0
 C
 C  add -<X|Fx> to forces:
 C  NOTE only one-electron part left of Fx
@@ -871,15 +909,19 @@ C  NOTE only one-electron part left of Fx
       open(unit=nfunit2,file=jobname(1:lenJ)//'.fock1',
      &     form='unformatted',access='direct',recl=24*ntri,status='old')
 
-C      write(6,'(20I4)') KW2atom
       call Makegrad_CIM(natoms,gradv,bl(ifxsx),nfunit2,ntri,
      1                  bl(ixadr),ncf,KW2atom)
+C      call Makegrad(natoms,gradv,bl(ifxsx),nfunit,ntri,
+C     1                  bl(ixadr),ncf)
       call matrem('XF')
 
-      if(iprint.ge.2) then
+C NZG
+C      if(iprint.ge.2) then
          Write(iout,*) ' MP2 gradients after X-terms:'
          call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-      endif
+C      endif
+      stop
+
 C
 C  do <SxW> terms
 C  subtract 1/4 DYCo to restore orthogonality
@@ -892,32 +934,35 @@ cc
       call matdef('DY','r',ncf,nmo)
       call matmmult('den0','Y','DY')
       call matscal('DY',-onef)
-      call matdef('temp1','q',ncf,ncf)
-      call matzero('temp1')
-      call matmmul2('DY','occa','temp1','n','t','a')
-      call matrem('temp1')
       call matmmul2('DY','occa','W','n','t','a')
       call matrem('DY')
       iwad=mataddr('W')
 
-      call matdef('CIMY','r',ncf,ncen)
-      call matdef('DYCIM','r',ncf,ncen)
-      icimy=mataddr('CIMY')
-      iy=mataddr('Y')
-      call ZQtoL(bl(iy),bl(icimy),trans,ncen,nmo,ncf)
-      call matmmult('den0','CIMY','DYCIM')
-      call matscal('DYCIM',-onef)
-      call matdef('MOcen','r',ncf,ncen)
-      imocen=mataddr('MOcen')
-      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
-      call matmmul2('DYCIM','MOcen','CIMW','n','t','a')
-      call matrem('MOcen')
-      call matrem('DYCIM')
-      call matrem('CIMY')
+C Use a new formula for DYC term.
+C NZG_11/25/2017 @UARK
+      call matdef('DYM','r',ncf,nmo)
+      call matmmult('den0','YM','DYM')
+      call matscal('DYM',-onef)
+      call matmmul2('DYM','occa','CIMW','n','t','a')
+      call matrem('DYM')
       icimw=mataddr('CIMW')
 
-C NZG
-      gradv=0.0D0
+
+C      call matdef('CIMY','r',ncf,ncen)
+C      call matdef('DYCIM','r',ncf,ncen)
+C      icimy=mataddr('CIMY')
+C      iy=mataddr('Y')
+C      call ZQtoL(bl(iy),bl(icimy),trans,ncen,nmo,ncf)
+C      call matmmult('den0','CIMY','DYCIM')
+C      call matscal('DYCIM',-onef)
+C      call matdef('MOcen','r',ncf,ncen)
+C      imocen=mataddr('MOcen')
+C      call matcopy_cim(Ccen,bl(imocen),ncf,ncen)
+C      call matmmul2('DYCIM','MOcen','CIMW','n','t','a')
+C      call matrem('MOcen')
+C      call matrem('DYCIM')
+C      call matrem('CIMY')
+
 C
 C  add <Sx|W> to forces:
 C  call matpose('W')
@@ -933,12 +978,10 @@ cc
          call matprint('W',6)
       endif
 cc
-C NZG
-C      if(iprint.ge.2) then
+      if(iprint.ge.2) then
           Write(iout,*) ' MP2 gradients after W-terms:'
           call torque_CIM(NAtoms,0,bl(inuc),gradv,iatom)
-C      endif
-      stop
+      endif
 C
 C   before returning calculate the MP2 dipole moments
 C      call matdef('dip','v',3,3)
@@ -1444,14 +1487,15 @@ C
 C     Svein Saebo, Fayetteville, AR May 2002
 C
 c     NZG_5/16/2017 @UARK
-c     Modify the origin code for CIM force calculation. In the CIM force
-c     calculation, we need to transform the T from QCMO to LMO.
+c     Modify the original code for CIM force calculation. In the CIM 
+c     force calculation, we need to transform the T from QCMO to LMO.
 
       common /lindvec/ lind,idensp
       integer*1 int1(2,lbin)
       integer*4 ibin(2,lbin)
       character*11 scftype
-      dimension Tmnao(ncf,ncf),Tmnmo(nval,*),trans(nval,*),Ccen(ncf,*)
+      dimension Tmnao(ncf,ncf),Tmnmo(nval,nval)
+      dimension trans(nval,*),Ccen(ncf,*)
       dimension ifunpair(7,*)
       dimension gradv(3,*)
       dimension inx(12,*)
@@ -1509,9 +1553,11 @@ C
       call matdef('denf','q',ncf,ncf)
       call matdef('ddtf','q',ncf,ncf)
 
-      call matcopy('den0','denf')
-C      call matcopy('dencen','denf')
-      call matcopy('CIMX','ddtf')
+      call matcopy('denful','denf')
+C NZG
+
+C      call matcopy('CIMX','ddtf')
+      call matcopy('X12','ddtf')
       idena=mataddr('denf')
       iddt=mataddr('ddtf')
 C
@@ -1532,7 +1578,10 @@ C
 c
       do MYS=1,ncs
          call get_shell_size(inx,MYS,MYS_size)
-         do LAS=1,MYS
+
+C NZG
+C         do LAS=1,MYS
+         do LAS=1,ncs
 cc      if(LastSymPair(ics,kcs,nsym,ifunpair,inegl,iret)) cycle
             call get_shell_size(inx,LAS,LAS_size)
             lam1=inx(11,LAS)+1
@@ -1564,9 +1613,16 @@ C
                lam3=0
                do lam=lam1,lam2
                   lam3=lam3+1
-                  if(lam.gt.my) exit
+
+C NZG
+C                  if(lam.gt.my) exit
 C     istar=istar+nrcpb
-                  mylam=my*(my-1)/2+lam
+C NZG
+                  if (lam<=my) then
+                     mylam=my*(my-1)/2+lam
+                  else
+                     mylam=lam*(lam-1)/2+my
+                  endif
                   istar=(mylam-1)*nrcpb
                   ij=0
                   iwrd=1
@@ -1605,7 +1661,10 @@ c -- decompress the integral ------------------------
 c ---------------------------------------------------
                      enddo  ! over jj
                   enddo  ! over ii
-                  if(my.eq.lam) call matscal('TMO',half)
+
+C NZG
+                  if (lam>my) Tmnmo=transpose(Tmnmo)
+C                  if(my.eq.lam) call matscal('TMO',half)
                   call atoat2(Tmnmo,nval,'y',iscs)
 C  backtransform this matrix to AO basis
                   call secund(ttbt1)
@@ -1622,8 +1681,10 @@ CC
 CC   SS July 2003
 CC   add extra terms to TAO here to avoid repeated integral derivatives
 C
+C 
 C NZG
-C                  call addtoT1_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
+                  tmnao=0.0D0
+                  call addtoT_CIM(tmnao,bl(idena),bl(iddt),ncf,my,lam)
                   call moveTsh(Tmnao,bl(iTadr),ncfsq,my3,lam3,
      1                         MYS_size,LAS_size)
                   call secund(ttbt3)
@@ -1796,13 +1857,12 @@ C   called from rphas2
 C
 C=============
       dimension T(ncf,ncf),D(ncf,ncf),DDT(ncf,ncf)
-      parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
+      parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,two=2.0d0)
 
       fact=one4
       if(my.eq.lam) fact=one8
 C     dml=D(my,lam)*half*fact+DDT(my,lam)*one8
       dml=DDT(my,lam)*one8
-C     dml=DDT(my,lam)*one8
       ddtml=DDT(my,lam)*one8
 c
       do ny=1,ncf
@@ -1817,11 +1877,35 @@ c
       do isi=1,ncf
          disimy=D(isi,my)*one4
          do ny=1,ncf
+C            T(ny,isi)=T(ny,isi)+disimy*D(ny,lam)-ddtml*D(ny,isi)
             T(ny,isi)=T(ny,isi)+disimy*DDT(ny,lam)-ddtml*D(ny,isi)
          enddo
       enddo
       end
       
+C==========addtot_orig===================================
+      subroutine addtoT_CIM(T,D,DDT,ncf,my,lam)
+      implicit real*8(a-h,o-z)
+      dimension T(ncf,*),D(ncf,*),DDT(ncf,*)
+      parameter(half=0.5d0,one4=0.25d0,one8=0.125d0,on16=0.0625d0)
+      do ny=1,ncf
+         do isi=1,ncf
+C            if (my.gt.lam) then
+C               T(isi,ny)=T(isi,ny)
+C     2         +one4*DDT(my,ny)*D(lam,isi)
+C     3         -one8*DDT(my,lam)*D(ny,isi)! Fx
+C               T(ny,isi)=T(ny,isi)
+C     2         +one4*DDT(lam,ny)*D(my,isi)!
+C     3         -one8*DDT(lam,my)*D(isi,ny)
+C            else
+               T(isi,ny)=T(isi,ny)*half
+     2         +one4*DDT(lam,isi)*D(ny,my)!
+C     3         -one8*DDT(my,lam)*D(ny,isi)
+C     3         -one8*DDT(my,ny)*D(lam,isi)
+C            endif
+         enddo
+      enddo
+      end
 
 C======XWYterms_CIM=====================================================
       subroutine XWYterms_CIM(ncf,    nval,   nvir,   ndisk1, ndisk2,
@@ -2223,6 +2307,9 @@ c
       call matadd1('X1',-one,'CIMX')
       call matscal('CIMX',-two)
 
+C NZG
+      call matcopy('X2','X12')
+      call matscal('X12',-two)
       return
       end
 
@@ -2354,7 +2441,7 @@ C============cphfz_CIM====================================
       subroutine cphfz_CIM(ncf,    nval,   nvir,   ei,     ea,
      1                     y,      z,      nmo,    thresh, inx,
      2                     iprint, ncore,  ndisk,  ndisk2, ncen,
-     3                     Ccen,   trans)
+     3                     Ccen,   trans,  SklA,   SiaA,   natoms)
 C
       use memory
       implicit real*8(a-h,o-z)
@@ -2404,6 +2491,7 @@ C
 c     common /big/bl(30000)
       dimension ei(*),ea(*),y(nvir,*),z(nvir,nmo)
       dimension trans(nmo,nmo),Ccen(ncf,ncen)
+      dimension SiaA(nmo,nvir,natoms),SklA(nmo,nmo,natoms)
       integer*4 info4
       dimension inx(*)
       logical done,swtr,efit,dz2z
@@ -2412,6 +2500,9 @@ C   max CPHF iterations set to 40 here!
       parameter (accur=1.0d-05,accu2=0.000416d0,accu3=0.0000416d0) 
 c     accu2 is threshold to switch integral threshold
 C
+      integer,allocatable::ipiv1(:)
+      real*8,allocatable::C(:,:),u(:),v(:),B(:,:,:)
+
       done=.false.
       swtr=.true.
       diffm=0.d0
@@ -2453,7 +2544,6 @@ C  reserve memory for two copies of H and B used in DIIS
       iadz=mataddr('DZ')
       call matdef('Zaio','r',nvir,nmo)
       izaio=mataddr('Zaio')
-
 C
 C     end memory allocation
 c----------------------------------------------------------------
@@ -2464,6 +2554,46 @@ c----------------------------------------------------------------
 C  the first iterations with thres2 normally 10**-7, then thres1
 C  normally 10**-10
 C----------------------------------------------------------------
+
+C  start solving CPL equation.
+C  Eq(45) in LMP2 gradient paper. JCP,108,5185,1998      
+      write(6,*)
+      write(6,*) 'Start solving CPL equation!'
+      call elapsec(tcpl1)
+      lenca=nmo*(nmo-1)/2
+      iy=mataddr('Y')
+      iocc=mataddr('occa')
+      allocate(C(lenca,lenca),u(lenca),v(lenca))
+      call calcu(bl(iy),bl(iocc),trans,ncf,nmo,u,lenca)
+      call calcc(SklA,C,nmo,natoms,lenca)
+      allocate(ipiv1(lenca))
+      call dgetrf(lenca,lenca,C,lenca,ipiv1,info)
+      if (info/=0) then
+         write(6,*) "Wrong in calling dgetrf in CPL!"
+         stop
+      endif
+      v=-u
+      call dgetrs('N',lenca,1,C,lenca,ipiv1,v,lenca,info)
+      if (info/=0) then
+         write(6,*) "Wrong in calling dgetrs in CPL!"
+         stop
+      endif
+
+      call elapsec(tcpl2)
+      tcpl=tcpl2-tcpl1
+      write(6,"(' Elapsed time for solving CPL equation:',
+     &      f8.2,' min.')") tcpl/60.0d0
+      write(6,*)
+
+      allocate(B(lenca,nvir,nmo))
+      call calcb(SklA,SiaA,trans,B,nmo,natoms,lenca,nvir)
+
+C      do ia=1,nvir
+C         do ii=1,nmo
+C            y(ia,ii)=y(ia,ii)+ddot(lenca,B(:,ia,ii),1,v,1)
+C         enddo
+C      enddo
+
 C  get initial Z's ! current z is z (z is the same as 'Zai')
       do ia=1,nvir
          deno=ea(ia)
@@ -2474,7 +2604,7 @@ C  get initial Z's ! current z is z (z is the same as 'Zai')
 C  initial Delta Z is simply Z
       call matcopy('Zai','DelZ')
 C  start CPHF-iterations
-      write(6,*) ' Start CPHF'
+      write(6,*) 'Start CPHF'
       write(6,*)
       write(6,"(' Initial Integral Threshold:  ',E14.4)") thresX
       write(6,*)
@@ -2700,7 +2830,13 @@ C   2X-2CoACo+ before contracting with F(x)  Eq. (77
       call matscal('dptm',half)
       if (iprint==2) call matprint('dptm',6)
       call matadd('dptm','DDT')
-C      call matprint('DDT',6)
+      call matcopy('dptm','X3')
+
+C NZG
+C      call matprint('X1',6)
+C      call matprint('X2',6)
+C      call matprint('X3',6)
+C      stop
 C  Frozen core:
       if (ncore.gt.0) then
          call matdef('zicao','q',ncf,ncf)
@@ -2730,7 +2866,8 @@ C      call matprint('DP',6)
 C      call matprint('Gmat',6)
       call matmmult('Gmat','den0','dptm')
       call matscal('dptm',-half)
-      call matmmul2('den0','dptm','W','n','n','a')
+C      call matmmul2('den0','dptm','W','n','n','a')
+      call matmmul2('den0','dptm','CIMW','n','n','a')
 C  end frozen core
 C  end -1/2DG(Z)D term
 C  form matrix ztilda and add -c*ztildaC+ to W (Eq. 78)
@@ -2767,14 +2904,14 @@ C  transform Zai and Ztil matrices from QCMO to central MOs
       call matmmul2('zttemp','MOcen','ZtCIM','n','t','n')
       iztcim=mataddr('ZtCIM')
       call tplustt(bl(iztcim),ncf)
-      call matadd1('ZtCIM',-half,'CIMW')
+C NZG -caution
+C      call matadd1('ZtCIM',-half,'CIMW')
       call matrem('zttemp')
 
       call matrem('MOcen')
 C NZG
-      call matcopy('DPCIM','X3')
-      call matadd('DPCIM','CIMX')
-C      call matprint('CIMX',6)
+C      call matcopy('DPCIM','X3')
+      call matadd('X3','CIMX')
           
       call matdef('DPCIMS','s',ncf,ncf)
       call mmark
@@ -2787,7 +2924,9 @@ C      call matprint('CIMX',6)
       call matdef('dptm2','q',ncf,ncf)
       call matmmult('Gmat','den0','dptm2')
       call matscal('dptm2',-half)
-      call matmmul2('den0','dptm2','CIMW','n','n','a')
+
+C NZG
+C       call matmmul2('den0','dptm2','CIMW','n','n','a')
       call matrem('dptm2')
 
       call matmmult('virt','ztil','ztemp')
@@ -2795,6 +2934,9 @@ C      call matprint('CIMX',6)
       izta=mataddr('Ztilda')
       call tplustt(bl(izta),ncf)
       call matadd1('Ztilda',-half,'W')
+
+C NZG
+      call matadd1('Ztilda',-half,'CIMW')
       call matrem('ztil')
       call matrem('ztemp')
       call matrem('Ztilda')
@@ -2828,8 +2970,116 @@ C    end frozen core
 
 
 C ======================================================================
+      subroutine calcu(Y,C,trans,ncf,nmo,u,lenca)
+C this routine calculates u vector using Eq(41) in LMP2 gradient paper.
+C NZG_11/13/2017 @UARK
+
+      implicit none
+      integer ncf,nmo,lenca,i,j,iu
+      real*8 Y(ncf,nmo),C(ncf,nmo),trans(nmo,nmo),u(lenca)
+
+      real*8,allocatable::Yloc(:,:),L(:,:),LY(:,:),LT(:,:)
+
+      allocate(Yloc(ncf,nmo),L(ncf,nmo))
+      call ZQtoL(Y,Yloc,trans,nmo,nmo,ncf)
+      call ZQtoL(C,L,trans,nmo,nmo,ncf)
+ 
+      allocate(LY(nmo,nmo),LT(nmo,ncf))
+      LT=transpose(L)
+      call matmul_mkl(LT,Yloc,LY,nmo,ncf,nmo)
+
+      iu=1
+      do j=1,nmo-1
+         do i=j+1,nmo
+            u(iu)=LY(i,j)-LY(j,i)
+            iu=iu+1
+         enddo
+      enddo
+      deallocate(Yloc,L,LY)
+
+      return
+      end subroutine calcu
+       
+
+C =====================================================================
+      subroutine calcc(S,C,nmo,natoms,lenca)
+C this routine calculate C matrix in Eq(30) in LMP2 gradient paper.
+C NZG_11/13/2017 @UARK
+      
+      implicit real*8 (a-h,o-z)
+      integer nmo,natoms,lenca,i,j,k,l,ia,i1,i2
+      real*8 S(nmo,nmo,natoms),C(lenca,lenca)
+
+      C=0.0D0
+      do ia=1,natoms
+         i1=0
+         do l=1,nmo-1
+            do k=l+1,nmo
+               i1=i1+1
+               i2=0
+               Skl=2.0D0*S(k,l,ia)
+               do j=1,nmo-1
+                  Sjkl=S(j,k,ia)*(S(l,l,ia)-0.5D0*(S(j,j,ia)+S(k,k,ia)))
+                  Sjlk=S(j,l,ia)*(S(k,k,ia)-0.5D0*(S(j,j,ia)+S(l,l,ia)))
+                  do i=j+1,nmo
+                     i2=i2+1
+                     if (j==l) C(i1,i2)=C(i1,i2)+S(i,j,ia)*Skl+
+     &               S(i,k,ia)*(S(l,l,ia)-0.5D0*(S(i,i,ia)+S(k,k,ia)))
+                     if (j==k) C(i1,i2)=C(i1,i2)-S(i,j,ia)*Skl-
+     &               S(i,l,ia)*(S(k,k,ia)-0.5D0*(S(i,i,ia)+S(l,l,ia)))
+                     if (i==l) C(i1,i2)=C(i1,i2)-S(i,j,ia)*Skl-Sjkl
+                     if (i==k) C(i1,i2)=C(i1,i2)+S(i,j,ia)*Skl+Sjlk
+                  enddo
+               enddo
+            enddo
+         enddo
+      enddo
+
+      return
+      end subroutine calcc
+
+
+C ======================================================================
+      subroutine calcb(S,S2,W,B,nmo,natoms,lenca,nvir)
+C this routine calculates the B matrix in Eq(29) in the LMP2 gradient
+C paper.
+C NZG_11/13/2017 @UARK
+      
+      implicit none
+      integer nmo,natoms,lenca,nvir,i,j,k,l,a,ia,kl
+      real*8 S(nmo,nmo,natoms),S2(nmo,nvir,natoms),W(nmo,nmo)
+      real*8 B(lenca,nvir,nmo),Sll,Skl,Skk,Ska,Sla
+
+      B=0.0D0
+      do ia=1,natoms
+         kl=0
+         do l=1,nmo-1
+            Sll=S(l,l,ia)
+            do k=l+1,nmo
+               kl=kl+1
+               Skl=2.0D0*S(k,l,ia)
+               Skk=S(k,k,ia)
+               do a=1,nvir
+                  Ska=S2(k,a,ia)
+                  Sla=S2(l,a,ia)
+                  do i=1,nmo
+                     B(kl,a,i)=B(kl,a,i)+Sla*W(i,l)*Skl+
+     &                                   Sll*(Ska*W(i,l)+Sla*W(i,k))-
+     &                                   Ska*W(i,k)*Skl-
+     &                                   Skk*(Sla*W(i,k)+Ska*W(i,l))
+                  enddo
+               enddo
+            enddo
+         enddo
+      enddo
+     
+      return
+      end subroutine calcb
+
+
+C ======================================================================
       subroutine ZQtoL(Zai,Zac,trans,ncen,nmo,nvir)
-C this routine transforms one of the indices of Z, Ztilda and Y from QCMO to
+C this routine transforms one of the indices of a matrix from QCMO to
 C LMO.
 C NZG_5/16/2017 @UARK
 

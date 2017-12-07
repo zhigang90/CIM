@@ -163,7 +163,7 @@ C      character*4::ENTYP
       real*8,allocatable::F2(:,:),FH(:,:),FHH(:),FIA(:,:),TRANS(:,:)
       real*8,allocatable::MAT(:,:),VECT(:,:),VALU(:),VC(:),dtmp(:)
       real*8,allocatable::virtime(:),DIAF(:),S2(:,:),MOS3(:,:)
-      real*8,allocatable::density(:,:)
+      real*8,allocatable::denkw(:,:),den(:,:),densub(:,:)
       real*8,external::dtrace2
       character*8,allocatable::AtSymb(:)
 
@@ -185,8 +185,8 @@ C Add force option for gradient calculation
       character scrfile*256
       character filefockder*256
       character fockname*256
-      real*8,allocatable::hx(:,:,:)
-      real*8,allocatable::temp(:,:)
+      real*8,allocatable::hx(:,:,:),density(:,:)
+      real*8,allocatable::temp(:,:),SklA(:,:,:),SiaA(:,:,:),sumskl(:,:)
 
 C Below are used for a new way of constructing virtual space: construct
 C PAOs within a cluster
@@ -461,9 +461,13 @@ C
       call matdef('fock','s',nbas,nbas)
       call matread('fock',np4,'fock_rhf')
 
-C Check density matrices from canonical and localized orbitals
-C      call matdef('den0','s',nbas,nbas)
-C      call matread('den0',np4,'den0_rhf')
+C  For force calculation, we need the density matrix from the whole
+C  system.
+      if (calforce2) then
+         call matdef('den0','s',nbas,nbas)
+         call matread('den0',np4,'den0_rhf')
+      endif
+
 C      call matprint('den0',6)
 
 C      allocate(density(nbas,nbas))
@@ -481,6 +485,18 @@ C      write(6,*) density
       CALL ReorderFock(nbas,nbas,Z(i1),FKW,FK)
 
       if (calforce2) then
+         allocate(denkw(nbas,nbas),den(nbas,nbas))
+         iden=mataddr('den0')
+         do i=1,nbas
+            do j=1,i
+               denkw(j,i)=bl(iden)
+               denkw(i,j)=bl(iden)
+               iden=iden+1
+            end do
+         end do
+         call ReorderFock(nbas,nbas,Z(i1),denkw,den)
+         deallocate(denkw)
+
          allocate(KW2atom(nbas),atom2KW(nbas))
          KW2atom(1:nbas)=Z(i1:i1+nbas-1)
 C         write(6,'(20I4)') KW2atom
@@ -900,13 +916,70 @@ C
          JF=nb_clu(i)
          allocate(MO_clu(JF,NA),FHH(NA),F2(JF,JF))
          MO_clu(:,:)=MOS1(1:JF,1:NA)
-         FHH=0.0D0; F2=0.0D0
+
+C calculate the SklA matrix. See Eq.(25) in the LMP2 gradient paper:
+C Adel Azhary, et. al. J Chem Phys, 108, 5185, 1998
+         if (calforce2) then
+            allocate(SklA(KB,KB,natm_clu(i)))
+            ifinal=0
+            SklA=0.0D0
+            do j=1,natm_clu(i)
+               istart=ifinal+1
+               ifinal=istart+NBatm(BA(j,i))-1
+               do k=1,KB
+                  do l=1,k
+                     do miu=istart,ifinal
+                        do niu=1,JF
+                           SklA(k,l,j)=SklA(k,l,j)+
+     &                                 MO_clu(miu,k)*S2(miu,niu)*
+     &                                 MO_clu(niu,l)+
+     &                                 MO_clu(miu,l)*S2(miu,niu)*
+     &                                 MO_clu(niu,k)
+                        enddo
+                     enddo
+                     if (k/=l) SklA(l,k,j)=SklA(k,l,j)
+                  enddo
+               enddo
+            enddo
+         endif
+C
+C         if (ifinal/=JF) then
+C            write(6,*) "Something wrong with basis functions."
+C            stop
+C         endif
+C
+CC test one kl pair
+C         allocate(sumskl(ncen,ncen))
+C         sumskl=0.0D0
+C         do k=2,ncen
+C            do l=1,k-1
+C               do j=1,natm_clu(i)
+C                  sumskl(k,l)=sumskl(k,l)+
+C     &                        (SklA(l,l,j)-SklA(k,k,j))*SklA(k,l,j)
+C               enddo
+C               if (sumskl(k,l)>1.0D-6) then
+C                  write(6,*) "SklA not zero",i,k,l,sumskl(k,l)
+C               endif
+C            enddo
+C         enddo
+C         deallocate(SklA,sumskl)
+
+         FHH=0.0D0
          do k=1,JF
             do j=1,JF
                F2(j,k)=FK(ZA(j,i),ZA(k,i))
             enddo
          enddo
          deallocate(MOS1)
+
+         if (calforce2) then
+            allocate(densub(JF,JF))
+            do k=1,JF
+               do j=1,JF
+                  densub(j,k)=den(ZA(j,i),ZA(k,i))
+               enddo
+            enddo
+         endif
 
 C---------------------------------------------------------------------
 C --- Construct QCMOs for each cluster ---
@@ -1072,9 +1145,35 @@ C         end do
 C         TRANS=transpose(VECT(1:KK,1:KK))
 C
 C         KB=KK
+
 C --Normalize the QCMOs
 C --NZG_4/11/2017 @@UARK
-C         call normorb(JF,NA,MOS2,S2(1:JF,1:JF))
+         call normorb(JF,NA,MOS2,S2(1:JF,1:JF))
+
+C Calculate SiaA matrix by Eq(31) in the LMP2 gradient paper.
+         if (calforce2) then
+            allocate(SiaA(KB,KV,natm_clu(i)))
+            ifinal=0
+            SiaA=0.0D0
+            do j=1,natm_clu(i)
+               istart=ifinal+1
+               ifinal=istart+NBatm(BA(j,i))-1
+               do k=1,KB
+                  do l=1,KV
+                     do miu=istart,ifinal
+                        do niu=1,JF
+                           SiaA(k,l,j)=SiaA(k,l,j)+
+     &                                 MO_clu(miu,k)*S2(miu,niu)*
+     &                                 MOS2(niu,l+KB)+
+     &                                 MOS2(miu,l+KB)*S2(miu,niu)*
+     &                                 MO_clu(niu,k)
+                        enddo
+                     enddo
+                  enddo
+               enddo
+            enddo
+         endif
+
          deallocate(S2)
  
          if (nprint>0) write(nprint,"(1x,'Trace(Fock LMO)=',f20.10)")
@@ -1192,6 +1291,22 @@ C
             enddo
          enddo
          call rwrit8(inpclu,'$AO-FOCK-A',LF2,dtmp(1)) !((F2(k,j),k=1,j),j=1,JF)
+
+         if (calforce2) then
+            L=0
+            do j=1,JF
+               do k=1,j
+                  L=L+1
+                  dtmp(L)=densub(k,j)
+               enddo
+            enddo
+            call rwrit8(inpclu,'$DENSITY',LF2,dtmp(1))
+
+            call rwrit8(inpclu,'$SklA',KB*KB*natm_clu(i),SklA(1,1,1))
+            call rwrit8(inpclu,'$SiaA',KB*KV*natm_clu(i),SiaA(1,1,1))
+            deallocate(densub,SklA,SiaA)
+         endif
+ 
          deallocate(dtmp,F2,FH)
          close(inpclu)
 C
@@ -1219,17 +1334,13 @@ C Write the hx matrix into disk. -NZG_10/12/2017 @UARK
                      itri=miu*(miu-1)/2+niu
                      miu_whole=ZA(miu,i)
                      niu_whole=ZA(niu,i)
-C                     write(6,*) 'debug'
-C                     write(6,*) miu,niu,miu_whole,niu_whole
                      miu_kw=atom2KW(miu_whole)
                      niu_kw=atom2KW(niu_whole)
-C                     write(6,*) miu_kw,niu_kw
                      if (miu_kw>=niu_kw) then
                         itri_whole=miu_kw*(miu_kw-1)/2+niu_kw
                      else
                         itri_whole=niu_kw*(niu_kw-1)/2+miu_kw
                      endif
-C                     write(6,*) itri_whole
                      temp(itri,1)=hx(itri_whole,1,BA(j,i))
                      temp(itri,2)=hx(itri_whole,2,BA(j,i))
                      temp(itri,3)=hx(itri_whole,3,BA(j,i))
